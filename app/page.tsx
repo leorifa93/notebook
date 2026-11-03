@@ -1,14 +1,21 @@
+import { ChatPlaceholder } from "@/components/chat-placeholder";
+import { SourceSidebar } from "@/components/source-sidebar";
+
 /**
- * Startseite – Platzhalter mit eigenen Design-Tokens.
+ * Startseite: zweispaltiges Layout.
  *
- * Die Tokens aus app/globals.css sind jetzt verdrahtet; die App-Shell mit
- * Quellenleiste und Chat folgt im nächsten Schritt.
+ * Links die Quellen, rechts der Chat. In Schritt 1 sind beide Spalten
+ * statisch; die Interaktion hängt später an /api/ingest und /api/chat.
  */
 export default function HomePage() {
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-2 px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Notebook</h1>
-      <p className="text-muted-foreground">Antworten nur aus deinen Quellen.</p>
+    <main className="flex h-full min-h-screen flex-col md:flex-row">
+      <div className="hidden h-screen md:block">
+        <SourceSidebar />
+      </div>
+      <div className="flex h-screen min-w-0 flex-1 flex-col">
+        <ChatPlaceholder />
+      </div>
     </main>
   );
 }
