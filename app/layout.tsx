@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
+import "./globals.css";
+
 /**
  * Wurzel-Layout. Bewusst ohne `next/font/google`: ein Webfont zur Build-Zeit
  * macht `next build` von Netzwerkzugriff abhängig. Der System-Stack im
@@ -19,8 +21,8 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="de">
-      <body>{children}</body>
+    <html lang="de" className="h-full">
+      <body className="h-full antialiased">{children}</body>
     </html>
   );
 }
