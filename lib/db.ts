@@ -1,0 +1,102 @@
+import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
+
+import { databaseUrl } from "@/lib/env";
+
+/**
+ * Datenbankzugriff.
+ *
+ * Bewusst der einzige Ort im Repo, der `pg` importiert. Alles andere ruft
+ * `query()` oder `withTransaction()` auf. Kein ORM: die Abfragen in
+ * lib/retrieval.ts nutzen pgvector-Operatoren (`<=>`, `ts_rank_cd`), die ein
+ * ORM nur umständlich durchreichen würde.
+ *
+ * Lazy statt Modul-Scope: `new Pool()` wird erst beim ersten Query erzeugt.
+ * So baut `next build` ohne DATABASE_URL durch, statt beim Import zu
+ * scheitern.
+ */
+
+let pool: Pool | undefined;
+
+export function getPool(): Pool {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: databaseUrl(),
+      // Serverless-freundlich: wenige Verbindungen pro Instanz. Bei Supabase
+      // oder Neon gehört hier der Pooler-Port (6543 bzw. -pooler) in die URL.
+      max: 5,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+    });
+  }
+  return pool;
+}
+
+/**
+ * Typsicherer Wrapper um `pool.query`.
+ *
+ * `pg` gibt `any`-Zeilen zurück; der generische Parameter ist die einzige
+ * Stelle, an der wir dem Aufrufer vertrauen. Deshalb immer mit einem
+ * expliziten Zeilentyp aufrufen, nie ohne.
+ *
+ * TODO(Schritt 2): Query-Logging mit Dauer ergänzen, sobald echte Last da ist.
+ */
+export async function query<T extends QueryResultRow>(
+  text: string,
+  params: readonly unknown[] = [],
+): Promise<QueryResult<T>> {
+  const startedAt = Date.now();
+  try {
+    return await getPool().query<T>(text, params as unknown[]);
+  } catch (error) {
+    // Fehler mit Kontext anreichern, ohne das SQL-Log vollzuschreiben.
+    console.error("[db] query failed", {
+      durationMs: Date.now() - startedAt,
+      statement: text.slice(0, 120).replace(/\s+/g, " "),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}
+
+/** Kurzform für "genau eine Zeile oder null". */
+export async function queryOne<T extends QueryResultRow>(
+  text: string,
+  params: readonly unknown[] = [],
+): Promise<T | null> {
+  const result = await query<T>(text, params);
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Transaktion für mehrstufige Schreibvorgänge (Dokument + Chunks).
+ *
+ * Der Ingest schreibt erst das Dokument, dann alle Chunks. Bricht das
+ * Chunk-Insert ab, darf kein Dokument ohne Chunks zurückbleiben — sonst
+ * erscheint es als Quelle, die nichts beantworten kann.
+ *
+ * TODO(Schritt 2): In app/api/ingest/route.ts verwenden.
+ */
+export async function withTransaction<T>(
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Für Health-Checks und Skripte; schließt den Pool sauber. */
+export async function closePool(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    pool = undefined;
+  }
+}

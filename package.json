@@ -20,7 +20,8 @@
     "tailwind-merge": "3.7.0",
     "unpdf": "1.4.0",
     "ai": "5.0.285",
-    "@ai-sdk/openai": "2.0.140"
+    "@ai-sdk/openai": "2.0.140",
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "3.3.7",
@@ -33,6 +34,7 @@
     "autoprefixer": "10.4.21",
     "postcss": "8.5.6",
     "tailwindcss": "3.4.19",
-    "tailwindcss-animate": "1.0.7"
+    "tailwindcss-animate": "1.0.7",
+    "@types/pg": "8.23.1"
   }
 }
