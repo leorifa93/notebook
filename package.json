@@ -7,8 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
-    "db:setup": "psql \"$DATABASE_URL\" -f db/schema.sql"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "next": "15.5.29",
