@@ -1,0 +1,47 @@
+# Abhängigkeiten
+node_modules/
+.pnp
+.pnp.*
+
+# Next.js
+/.next/
+/out/
+build/
+next-env.d.ts
+
+# Produktion
+.vercel
+*.tsbuildinfo
+
+# Umgebungsvariablen – niemals committen
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.log
+
+# Betriebssystem
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# Test- und Coverage-Artefakte
+coverage/
+.nyc_output/
+
+# Lokale Daten (Seed-PDFs, Dumps)
+/tmp/
+/uploads/
+*.dump
