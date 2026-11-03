@@ -18,7 +18,9 @@
     "clsx": "2.1.1",
     "lucide-react": "0.460.0",
     "tailwind-merge": "3.7.0",
-    "unpdf": "1.4.0"
+    "unpdf": "1.4.0",
+    "ai": "5.0.285",
+    "@ai-sdk/openai": "2.0.140"
   },
   "devDependencies": {
     "@eslint/eslintrc": "3.3.7",
