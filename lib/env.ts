@@ -19,18 +19,18 @@ function readEnv(name: string): string | undefined {
   return value && value.trim() !== "" ? value.trim() : undefined;
 }
 
-/** DATABASE_URL, sonst ein Fehler mit Hinweis auf die README. */
+/** Supabase-App-URL (Pooler, Port 6543), sonst ein Fehler mit Hinweis auf die README. */
 export function databaseUrl(): string {
   const value = readEnv("DATABASE_URL");
   if (!value) {
     throw new Error(
-      "DATABASE_URL ist nicht gesetzt. Kopiere .env.example nach .env.local und trage die Postgres-URL ein.",
+      "DATABASE_URL ist nicht gesetzt. Kopiere .env.example nach .env.local und trage die Supabase-URL (Pooler, Port 6543) ein.",
     );
   }
   return value;
 }
 
-/** OpenRouter/OpenAI-Key; Fehler erst beim ersten echten LLM-Aufruf. */
+/** OpenAI-Key; Fehler erst beim ersten echten LLM-Aufruf. */
 export function openAiApiKey(): string {
   const value = readEnv("OPENAI_API_KEY");
   if (!value) {

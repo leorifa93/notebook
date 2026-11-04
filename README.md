@@ -23,7 +23,7 @@ flowchart LR
   A[PDF-Upload] --> B[Parse<br/>seitenweise]
   B --> C[Chunking<br/>500–800 Tokens<br/>15 % Überlappung]
   C --> D[Embeddings<br/>text-embedding-3-small]
-  D --> E[(Postgres<br/>pgvector)]
+  D --> E[(Supabase<br/>Postgres + pgvector)]
 
   F[Frage] --> G[Embedding<br/>der Frage]
   G --> H[Hybrid-Suche<br/>Vektor + Volltext]
@@ -68,15 +68,17 @@ Der Weg in Worten:
 
 ## Technische Entscheidungen
 
-### Warum pgvector statt einer eigenen Vektordatenbank
+### Warum Supabase und pgvector statt einer eigenen Vektordatenbank
 
-Chunks, Seitenzahlen und Vektoren liegen in derselben Zeile. Eine Suche ist
-damit ein `JOIN` statt einer zweiten Datenhaltung, die mit Postgres synchron
-gehalten werden müsste — und genau diese Synchronisation ist die Quelle der
-meisten "Beleg zeigt auf falsche Seite"-Fehler. Bei einem Dokumentenbestand
-dieser Größe ist HNSW in Postgres schnell genug; eine eigene Vektordatenbank wie
-Pinecone oder Weaviate wäre ein zusätzlicher Dienst, ein zusätzlicher Key und
-eine zusätzliche Stelle, an der die Live-Demo ausfallen kann.
+Supabase ist der Datenbank-Stack dieses Projekts — Postgres mit pgvector,
+ohne eigenen Betrieb. Chunks, Seitenzahlen und Vektoren liegen in derselben
+Zeile. Eine Suche ist damit ein `JOIN` statt einer zweiten Datenhaltung, die
+mit Postgres synchron gehalten werden müsste — und genau diese
+Synchronisation ist die Quelle der meisten „Beleg zeigt auf falsche
+Seite"-Fehler. Bei einem Dokumentenbestand dieser Größe ist HNSW in Postgres
+schnell genug; eine eigene Vektordatenbank wie Pinecone oder Weaviate wäre ein
+zusätzlicher Dienst, ein zusätzlicher Key und eine zusätzliche Stelle, an der
+die Live-Demo ausfallen kann.
 
 ### Warum Seitenzahl als Metadatum am Chunk
 
@@ -109,41 +111,55 @@ stehen, während die Antwort noch tippt.
 
 ## Lokales Setup
 
-Voraussetzungen: Node.js 20+, ein Postgres mit pgvector.
+Voraussetzungen: Node.js 20+ und ein Supabase-Projekt (kostenloser Plan
+genügt).
 
 **1. Abhängigkeiten**
 
 ```bash
-npm install
+npm ci
 ```
 
-**2. Postgres mit pgvector starten**
+**2. Supabase-Projekt anlegen**
+
+Auf [supabase.com](https://supabase.com) ein neues Projekt anlegen. Region
+`eu-central-1` (Frankfurt) ist für eine Demo in Deutschland die naheliegende
+Wahl — kürzere Wege, und die Daten bleiben in der EU. Das Datenbank-Passwort
+beim Anlegen vergeben und **sofort sichern**: Supabase zeigt es nur einmal.
+
+pgvector ist in Supabase vorinstalliert, ein eigenes Datenbank-Setup entfällt.
+
+**3. Schema einspielen**
+
+Das Skript ist idempotent und kann gefahrlos erneut laufen.
+
+Bequemster Weg: Inhalt von `db/schema.sql` im Supabase-Dashboard unter
+**SQL Editor** einfügen und ausführen.
+
+Alternativ über die direkte Verbindung (nicht den Pooler — PgBouncer
+versteht manche DDL-Statements nicht):
 
 ```bash
-docker run --name notebook-pg \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=notebook \
-  -p 5433:5432 \
-  -d pgvector/pgvector:pg16
+psql "$DIRECT_DATABASE_URL" -f db/schema.sql
 ```
 
-Alternativ Supabase oder Neon (beide bringen pgvector mit). Bei serverlosen
-Anbietern den **Pooler-Port** in die URL schreiben, nicht 5432.
-
-**3. Konfiguration**
+**4. Konfiguration**
 
 ```bash
 cp .env.example .env.local
-# DATABASE_URL und OPENAI_API_KEY eintragen
 ```
 
-**4. Schema einspielen**
+In `.env.local` zwei Werte eintragen:
 
-```bash
-psql "postgres://postgres:postgres@localhost:5433/notebook" -f db/schema.sql
-```
+- `DATABASE_URL` — aus Supabase unter **Project Settings → Database →
+  Connection string → URI**. Für die App den **Pooler-Port 6543** nehmen,
+  nicht 5432: serverlose Functions öffnen viele kurze Verbindungen, und der
+  Pooler davor ist genau dafür da.
+- `OPENAI_API_KEY` — ein Key mit monatlichem Ausgabenlimit
+  (`platform.openai.com` → Settings → Limits).
 
-Das Skript ist idempotent und kann gefahrlos erneut laufen.
+Beide Werte gehören später in Vercel unter **Settings → Environment
+Variables**, nicht ins Repo. `.env.local` steht in `.gitignore`.
 
 **5. Starten**
 
@@ -160,9 +176,10 @@ npm run build        # next build
 npm run lint
 ```
 
-Beide laufen **ohne** `DATABASE_URL` und ohne `OPENAI_API_KEY` durch: alle
-Env-Zugriffe sind in `lib/env.ts` gekapselt und werden erst beim ersten Aufruf
-ausgewertet, nie beim Import.
+Alle vier laufen **ohne** `DATABASE_URL` und ohne `OPENAI_API_KEY` durch: jeder
+Env-Zugriff ist in `lib/env.ts` gekapselt und wird erst beim Aufruf
+ausgewertet, nie beim Import. Deshalb lässt sich der Build auch in einer
+frischen CI ohne Supabase-Zugang prüfen.
 
 ---
 

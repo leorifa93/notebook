@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Notebook – Datenbankschema
--- Postgres 14+ mit pgvector 0.5+ (lokal: pgvector/pgvector:pg16 Docker-Image,
--- hosted: Supabase, Neon, Railway – alle bringen pgvector mit).
+-- Supabase-Postgres mit pgvector. pgvector ist dort vorinstalliert; kein
+-- eigenes Datenbank-Setup, kein Docker, keine zweite Abhängigkeit.
 --
 -- Ausführen:  psql "$DATABASE_URL" -f db/schema.sql
 -- Mehrfach ausführbar (IF NOT EXISTS), damit Setup-Skripte idempotent sind.
@@ -9,7 +9,7 @@
 
 -- pgvector stellt den Typ `vector` und die Distanzoperatoren (<->, <=>, <#>)
 -- bereit. Auf Managed-Postgres braucht das je nach Anbieter Superuser-Rechte;
--- bei Supabase/Neon ist es im SQL-Editor bereits freigeschaltet.
+-- bei Supabase ist es im SQL-Editor bereits freigeschaltet.
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ----------------------------------------------------------------------------

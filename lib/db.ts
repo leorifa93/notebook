@@ -21,8 +21,9 @@ export function getPool(): Pool {
   if (!pool) {
     pool = new Pool({
       connectionString: databaseUrl(),
-      // Serverless-freundlich: wenige Verbindungen pro Instanz. Bei Supabase
-      // oder Neon gehört hier der Pooler-Port (6543 bzw. -pooler) in die URL.
+      // Serverless-freundlich: wenige Verbindungen pro Instanz. Die URL zeigt
+      // bei Supabase auf den Pooler (Port 6543), nicht auf 5432: Vercel
+      // Functions sind kurzlebig, der PgBouncer davor hält die Verbindungen.
       max: 5,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,

@@ -14,7 +14,8 @@ Gewohnheit widerspricht, gilt diese Datei.
 - **shadcn/ui** als handgeschriebene Dateien in `components/ui/`. Komponenten
   bei Bedarf ergänzen, nicht per CLI-Interaktivprompt erzeugen.
 - **Vercel AI SDK** (`ai`, `@ai-sdk/openai`) für Embeddings und Chat.
-- **Postgres + pgvector**, Zugriff ausschließlich über `pg` mit rohem SQL.
+- **Supabase (Postgres + pgvector)**, Zugriff ausschließlich über `pg` mit rohem
+  SQL gegen den Supabase-Pooler. Kein ORM, keine zweite Datenhaltung.
   **Kein Prisma, kein Drizzle, kein anderes ORM.** Die Suche braucht
   `<=>`, `ts_rank_cd` und `FULL OUTER JOIN` — ein ORM stünde dem nur im Weg.
 - Deployment-Ziel ist **Vercel**.
