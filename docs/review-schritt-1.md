@@ -25,11 +25,13 @@ Datenbankverbindung im Betrieb.
 | Hybridsuche | Testdaten mit bekannter Zielstelle | richtiger Chunk auf Platz 1 |
 | API-Verhalten | Aufruf der Stub-Routen | 501 für Stubs, 400 bei ungültiger Eingabe |
 | Oberfläche | Startseite in Desktop- und Mobilbreite gerendert | beide Zustände sauber |
-| Unit-Tests | `npm run test` — 46 Tests in 4 Dateien | alle grün, ~0,5 s |
+| Unit-Tests | `npm run test` — 52 Tests in 5 Dateien | alle grün, ~0,5 s |
+| Themefarbe global | `<meta name="theme-color">` und `/manifest.webmanifest` im laufenden Dev-Server geprüft | beide `#ffffff`, beide aus `lib/palette.ts` |
+| Palette eine Quelle | generiertes CSS geprüft (`bg-sidebar`, `text-muted-foreground`) | konkrete Hex-Werte aus der Palette, kein `hsl(var(--…))` |
 
 ## Testabdeckung
 
-`npm run test` startet Vitest (kein Browser, kein Netz, keine Datenbank), 46
+`npm run test` startet Vitest (kein Browser, kein Netz, keine Datenbank), 52
 Tests in unter einer Sekunde. Getestet wird die Logik, in der ein Fehler still
 bleibt — also die Stellen, die in einer Demo plausibel aussehen, aber falsch
 sind:
@@ -48,6 +50,11 @@ sind:
 - **Quellenerkennung** (`tests/unit/pdf.test.ts`, 5 Tests): PDF per MIME-Typ
   und per Endung, Markdown, Text, sowie die ehrliche Ablehnung von Office-
   Dateien und Bildern.
+- **Palette** (`tests/unit/palette.test.ts`, 6 Tests): `globals.css` enthält
+  keine Farbvariablen mehr, `tailwind.config.ts` baut seine Klassen aus
+  `lib/palette.ts` und nicht mehr aus `hsl(var(--…))`, und die Radien kommen
+  aus derselben Datei. Das ist der Regressionsschutz gegen genau den Zustand,
+  den das Review bemängelt hat: eine Farbe an mehreren Stellen.
 
 Nicht getestet in Schritt 1: Datenbankzugriffe und der echte PDF-Parser. Beides
 braucht eine Datenbank bzw. eine echte Datei und kommt in Schritt 2 mit PGlite

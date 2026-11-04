@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
+import { palette } from "@/lib/palette";
+
 import "./globals.css";
 
 /**
@@ -14,8 +16,16 @@ export const metadata: Metadata = {
     "Lade Dokumente hoch und stelle Fragen. Jede Antwort stammt ausschließlich aus deinen Quellen und ist mit Seitenzahl belegt.",
 };
 
+/**
+ * `themeColor` färbt die Statusleiste auf Mobilgeräten und die Titelleiste
+ * einer installierten PWA. Der Wert kommt aus `lib/palette.ts` — derselben
+ * Datei, aus der Tailwind seine Farbklassen baut. Kein Hex-Literal hier:
+ * sonst gibt es zwei Wahrheiten für dieselbe Farbe, und die Statusleiste
+ * bleibt irgendwann weiß, während die App längst anders aussieht.
+ */
 export const viewport: Viewport = {
-  themeColor: "#ffffff",
+  themeColor: palette.background,
+  colorScheme: "light",
 };
 
 export default function RootLayout({
