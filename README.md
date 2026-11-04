@@ -151,9 +151,10 @@ Das Skript ist idempotent und kann gefahrlos erneut laufen.
 npm run dev          # http://localhost:3000
 ```
 
-**Prüfen, ob alles baut**
+**Prüfen, ob alles baut und läuft**
 
 ```bash
+npm run test         # vitest: 46 Tests, ~0,5 s
 npm run typecheck    # tsc --noEmit
 npm run build        # next build
 npm run lint

@@ -25,6 +25,33 @@ Datenbankverbindung im Betrieb.
 | Hybridsuche | Testdaten mit bekannter Zielstelle | richtiger Chunk auf Platz 1 |
 | API-Verhalten | Aufruf der Stub-Routen | 501 für Stubs, 400 bei ungültiger Eingabe |
 | Oberfläche | Startseite in Desktop- und Mobilbreite gerendert | beide Zustände sauber |
+| Unit-Tests | `npm run test` — 46 Tests in 4 Dateien | alle grün, ~0,5 s |
+
+## Testabdeckung
+
+`npm run test` startet Vitest (kein Browser, kein Netz, keine Datenbank), 46
+Tests in unter einer Sekunde. Getestet wird die Logik, in der ein Fehler still
+bleibt — also die Stellen, die in einer Demo plausibel aussehen, aber falsch
+sind:
+
+- **Chunking** (`tests/unit/chunk.test.ts`, 15 Tests): Verlustfreiheit bei
+  überlangen Absätzen, Seitentrennung (kein Chunk über zwei Seiten), Einhaltung
+  des Token-Budgets trotz Überlappung, Wortgrenzen, Determinismus, Kontext-Header.
+- **Prompt und Belege** (`tests/unit/prompt.test.ts`, 19 Tests): Nummerierung
+  ab 1, Seitenzahl im Quellenblock, ehrlicher Hinweis bei null Treffern,
+  Kürzung ohne Wortbruch, Extraktion der Belegnummern aus der Antwort,
+  pgvector-Literal.
+- **Routen-Verträge** (`tests/unit/api-validation.test.ts`, 7 Tests): kaputtes
+  JSON, leere und zu lange Frage, Filtern ungültiger `documentIds`, fehlende
+  Datei beim Ingest. Die 501-Antworten sind hier absichtlich festgeschrieben:
+  Schritt 2 muss diesen Test bewusst ändern, statt still etwas anderes zu tun.
+- **Quellenerkennung** (`tests/unit/pdf.test.ts`, 5 Tests): PDF per MIME-Typ
+  und per Endung, Markdown, Text, sowie die ehrliche Ablehnung von Office-
+  Dateien und Bildern.
+
+Nicht getestet in Schritt 1: Datenbankzugriffe und der echte PDF-Parser. Beides
+braucht eine Datenbank bzw. eine echte Datei und kommt in Schritt 2 mit PGlite
+und Fixture-PDFs dazu — ein Test, der nur einen Mock prüft, wäre hier wertlos.
 
 ## Gefundene Fehler
 
