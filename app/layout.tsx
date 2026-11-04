@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 
-import { palette } from "@/lib/palette";
+import { THEME_COLORS } from "@/lib/theme";
 
 import "./globals.css";
 
@@ -18,13 +18,12 @@ export const metadata: Metadata = {
 
 /**
  * `themeColor` färbt die Statusleiste auf Mobilgeräten und die Titelleiste
- * einer installierten PWA. Der Wert kommt aus `lib/palette.ts` — derselben
- * Datei, aus der Tailwind seine Farbklassen baut. Kein Hex-Literal hier:
- * sonst gibt es zwei Wahrheiten für dieselbe Farbe, und die Statusleiste
- * bleibt irgendwann weiß, während die App längst anders aussieht.
+ * einer installierten PWA. Es kann nicht auf `var(--background)` zeigen — ein
+ * Meta-Tag hat keinen CSS-Kontext. Deshalb `THEME_COLORS` aus `lib/theme.ts`,
+ * das ein Test gegen die CSS-Tokens absichert.
  */
 export const viewport: Viewport = {
-  themeColor: palette.background,
+  themeColor: THEME_COLORS.background,
   colorScheme: "light",
 };
 

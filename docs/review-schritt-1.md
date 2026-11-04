@@ -25,13 +25,13 @@ Datenbankverbindung im Betrieb.
 | Hybridsuche | Testdaten mit bekannter Zielstelle | richtiger Chunk auf Platz 1 |
 | API-Verhalten | Aufruf der Stub-Routen | 501 für Stubs, 400 bei ungültiger Eingabe |
 | Oberfläche | Startseite in Desktop- und Mobilbreite gerendert | beide Zustände sauber |
-| Unit-Tests | `npm run test` — 52 Tests in 5 Dateien | alle grün, ~0,5 s |
-| Themefarbe global | `<meta name="theme-color">` und `/manifest.webmanifest` im laufenden Dev-Server geprüft | beide `#ffffff`, beide aus `lib/palette.ts` |
-| Palette eine Quelle | generiertes CSS geprüft (`bg-sidebar`, `text-muted-foreground`) | konkrete Hex-Werte aus der Palette, kein `hsl(var(--…))` |
+| Unit-Tests | `npm run test` — 56 Tests in 5 Dateien | alle grün, ~0,9 s |
+| Themefarbe global | `<meta name="theme-color">` und `/manifest.webmanifest` im laufenden Server geprüft | beide `#ffffff`, aus `lib/theme.ts` |
+| Theme als CSS-Variablen | generiertes CSS geprüft (`bg-primary`, `bg-sidebar`) | `hsl(var(--primary))`, kein Hex im Tailwind-Config |
 
 ## Testabdeckung
 
-`npm run test` startet Vitest (kein Browser, kein Netz, keine Datenbank), 52
+`npm run test` startet Vitest (kein Browser, kein Netz, keine Datenbank), 56
 Tests in unter einer Sekunde. Getestet wird die Logik, in der ein Fehler still
 bleibt — also die Stellen, die in einer Demo plausibel aussehen, aber falsch
 sind:
@@ -50,11 +50,13 @@ sind:
 - **Quellenerkennung** (`tests/unit/pdf.test.ts`, 5 Tests): PDF per MIME-Typ
   und per Endung, Markdown, Text, sowie die ehrliche Ablehnung von Office-
   Dateien und Bildern.
-- **Palette** (`tests/unit/palette.test.ts`, 6 Tests): `globals.css` enthält
-  keine Farbvariablen mehr, `tailwind.config.ts` baut seine Klassen aus
-  `lib/palette.ts` und nicht mehr aus `hsl(var(--…))`, und die Radien kommen
-  aus derselben Datei. Das ist der Regressionsschutz gegen genau den Zustand,
-  den das Review bemängelt hat: eine Farbe an mehreren Stellen.
+- **Theme** (`tests/unit/theme.test.ts`, 10 Tests): die HSL-zu-Hex-Umrechnung
+  für alle sechs Sektoren des Farbkreises, der Abgleich von `THEME_COLORS`
+  gegen `--background` und `--foreground` in `globals.css`, und die Prüfung,
+  dass `tailwind.config.ts` auf die CSS-Variablen verweist statt Hex-Werte zu
+  duplizieren. Der wichtige Teil: das Theme lebt an genau einer Stelle
+  (`globals.css`), und die Metadaten-Kopie kann nicht stillschweigend
+  auseinanderlaufen.
 
 Nicht getestet in Schritt 1: Datenbankzugriffe und der echte PDF-Parser. Beides
 braucht eine Datenbank bzw. eine echte Datei und kommt in Schritt 2 mit PGlite

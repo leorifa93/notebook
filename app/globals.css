@@ -3,16 +3,53 @@
 @tailwind utilities;
 
 /*
- * Keine Farb-Variablen hier.
+ * Das Farbschema — die einzige Stelle, an der Farben definiert sind.
  *
- * Die Palette steht in `lib/palette.ts`, `tailwind.config.ts` baut daraus die
- * Klassen. Ein `--background` in dieser Datei wäre eine zweite Wahrheit für
- * dieselbe Farbe — genau der Punkt, der im Review aufgefallen ist. Wo CSS
- * einen Wert trotzdem braucht (Scrollbars), holt `theme()` ihn aus dem
- * Tailwind-Theme, also aus derselben Quelle.
+ * Warum CSS-Variablen und nicht Hex-Werte in der Tailwind-Konfiguration: eine
+ * Variable beschreibt die Farbe einmal und wird überall referenziert. Tailwind
+ * reicht sie nur durch (`hsl(var(--background))`), und weil die Tokens als
+ * HSB-/HSL-Tripel ohne `hsl()`-Wrapper stehen, funktioniert auch Transparenz
+ * (`bg-primary/90`). Mit Hex-Werten in der Config wäre jede Abstufung eine
+ * eigene Klasse und jede Farbänderung ein Griff in JavaScript.
+ *
+ * Die einzige Ausnahme sind Metadaten, die der Browser liest, bevor CSS da ist
+ * (`<meta name="theme-color">`, Web-Manifest). Dort steht ein fertiger Wert in
+ * `lib/theme.ts`, den ein Test gegen `--background` hier abgleicht — damit
+ * beide nicht auseinanderlaufen können.
  */
-
 @layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 8%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 8%;
+
+    --sidebar: 240 20% 98.5%;
+    --sidebar-foreground: 240 8% 20%;
+
+    --primary: 240 10% 12%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 240 6% 96%;
+    --secondary-foreground: 240 10% 12%;
+
+    --muted: 240 6% 96%;
+    --muted-foreground: 240 4% 46%;
+
+    --accent: 240 6% 95%;
+    --accent-foreground: 240 10% 12%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 240 10% 12%;
+
+    --radius: 0.75rem;
+  }
+
   * {
     @apply border-border;
   }
@@ -31,7 +68,7 @@
   /* Thin scrollbars keep the source list and the chat column calm. */
   .scrollbar-slim {
     scrollbar-width: thin;
-    scrollbar-color: theme(colors.border) transparent;
+    scrollbar-color: hsl(var(--border)) transparent;
   }
 
   .scrollbar-slim::-webkit-scrollbar {
@@ -39,7 +76,7 @@
   }
 
   .scrollbar-slim::-webkit-scrollbar-thumb {
-    background-color: theme(colors.border);
+    background-color: hsl(var(--border));
     border-radius: 9999px;
   }
 }

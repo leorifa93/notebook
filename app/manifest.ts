@@ -1,15 +1,14 @@
 import type { MetadataRoute } from "next";
 
-import { palette } from "@/lib/palette";
+import { THEME_COLORS } from "@/lib/theme";
 
 /**
  * Web-Manifest.
  *
- * Hier steht dieselbe Farbe wie im Viewport des Root-Layouts — beide kommen
- * aus `lib/palette.ts`, aus der auch Tailwind seine Klassen baut. Das ist der
- * Punkt: das Manifest wird vom Browser gelesen, bevor irgendein CSS geladen
- * ist (installierte PWA, Startbildschirm). Ein eigener Hex-Wert hier wäre die
- * dritte Kopie derselben Farbe.
+ * Das Manifest wird vom Browser gelesen, bevor CSS geladen ist (installierte
+ * PWA, Startbildschirm) — hier funktioniert `var(--background)` also nicht.
+ * Die Werte kommen aus `lib/theme.ts` und werden dort per Test gegen die
+ * CSS-Tokens abgeglichen.
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -19,8 +18,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "Lade Dokumente hoch und stelle Fragen. Jede Antwort stammt ausschließlich aus deinen Quellen und ist mit Seitenzahl belegt.",
     start_url: "/",
     display: "standalone",
-    background_color: palette.background,
-    theme_color: palette.background,
+    background_color: THEME_COLORS.background,
+    theme_color: THEME_COLORS.background,
     lang: "de",
   };
 }

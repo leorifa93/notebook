@@ -1,15 +1,13 @@
 import type { Config } from "tailwindcss";
 import tailwindAnimate from "tailwindcss-animate";
 
-import { palette, radius } from "./lib/palette";
-
 const config: Config = {
   /*
-   * Kein `darkMode: ["class"]`. Das würde Klassen wie `dark:bg-…` erzeugen,
-   * die hier nichts tun — es gibt genau eine Palette und keine
-   * Theme-Umschaltung. Ein Schalter, der nicht schaltet, ist schlimmer als
-   * keiner: der nächste Leser sucht sonst nach dem Dark-Theme.
+   * Dark-Mode über eine Klasse am <html>. Es gibt heute kein zweites Theme,
+   * aber die Struktur dafür ist damit vorhanden: ein `:root.dark`-Block in
+   * globals.css mit denselben Variablennamen genügt, kein Umbau der Klassen.
    */
+  darkMode: ["class"],
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
@@ -23,47 +21,51 @@ const config: Config = {
     },
     extend: {
       colors: {
-        // Die Werte kommen aus lib/palette.ts — derselben Datei, aus der das
-        // Layout seine `themeColor` und das Manifest seine `theme_color`
-        // nimmt. Kein `hsl(var(--token))` mehr: eine Farbe, eine Quelle.
-        border: palette.border,
-        input: palette.input,
-        ring: palette.ring,
-        background: palette.background,
-        foreground: palette.foreground,
+        /*
+         * Jede Farbe zeigt auf eine CSS-Variable aus app/globals.css. Tailwind
+         * kennt hier nur den Verweis, nicht den Wert — so bleibt die Farbe an
+         * einer Stelle definiert, und Abstufungen wie `bg-primary/90`
+         * funktionieren, weil die Tokens als HSL-Tripel ohne hsl()-Wrapper
+         * stehen und Tailwind sie in `hsl(var(--primary) / <alpha>)` einsetzt.
+         */
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
         primary: {
-          DEFAULT: palette.primary,
-          foreground: palette.primaryForeground,
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
-          DEFAULT: palette.secondary,
-          foreground: palette.secondaryForeground,
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
         },
         muted: {
-          DEFAULT: palette.muted,
-          foreground: palette.mutedForeground,
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
         },
         accent: {
-          DEFAULT: palette.accent,
-          foreground: palette.accentForeground,
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
         },
         destructive: {
-          DEFAULT: palette.destructive,
-          foreground: palette.destructiveForeground,
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
         },
         card: {
-          DEFAULT: palette.card,
-          foreground: palette.cardForeground,
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
         },
         sidebar: {
-          DEFAULT: palette.sidebar,
-          foreground: palette.sidebarForeground,
+          DEFAULT: "hsl(var(--sidebar))",
+          foreground: "hsl(var(--sidebar-foreground))",
         },
       },
       borderRadius: {
-        lg: radius.lg,
-        md: radius.md,
-        sm: radius.sm,
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
