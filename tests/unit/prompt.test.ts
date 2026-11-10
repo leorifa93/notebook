@@ -51,9 +51,14 @@ describe("buildCitations", () => {
     expect(citation?.documentTitle).toBe("Anlage");
   });
 
-  it("lässt href in Schritt 1 leer, weil es noch keine Datei-URL gibt", () => {
-    const [citation] = buildCitations([chunk()]);
-    expect(citation?.href).toBeNull();
+  it("verlinkt die Originaldatei mit Seitenanker", () => {
+    const [citation] = buildCitations([chunk({ documentId: "doc-1", page: 3 })]);
+    expect(citation?.href).toBe("/api/documents/doc-1/file#page=3");
+  });
+
+  it("verlinkt Quellen ohne Seiten ohne Anker", () => {
+    const [citation] = buildCitations([chunk({ documentId: "doc-1", page: null })]);
+    expect(citation?.href).toBe("/api/documents/doc-1/file");
   });
 
   it("kürzt lange Auszüge, ohne mitten im Wort zu schneiden", () => {

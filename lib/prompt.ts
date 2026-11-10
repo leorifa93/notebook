@@ -18,8 +18,8 @@ export interface Citation {
   documentId: string;
   documentTitle: string;
   page: number | null;
-  /** Link auf die PDF-Seite im Viewer; `null` bei Quellen ohne Seiten. */
-  href: string | null;
+  /** Link auf die Originaldatei, bei Seiten mit `#page=N`. */
+  href: string;
   /** Gekürzter Auszug, damit der Nutzer den Beleg ohne Klick prüfen kann. */
   snippet: string;
 }
@@ -48,15 +48,20 @@ function snippet(text: string, maxChars = 240): string {
 }
 
 /**
+ * Link auf die Originaldatei, bei PDFs mit Seitenanker.
+ *
+ * Die Datei liegt seit Schritt 2 in `documents.file_bytes` und wird von
+ * GET /api/documents/[id]/file ausgeliefert. `#page=N` versteht der
+ * PDF-Viewer von Chrome, Edge und Firefox; Safari öffnet auf Seite 1.
+ */
+export function citationHref(documentId: string, page: number | null): string {
+  const base = `/api/documents/${encodeURIComponent(documentId)}/file`;
+  return page === null ? base : `${base}#page=${page}`;
+}
+
+/**
  * Baut die Belegliste, die im UI gezeigt wird und auf die der Prompt verweist.
- *
- * Der `href` zeigt auf den PDF-Viewer mit `#page=N`; das ist der Sprung, den
- * ein Reviewer im Video ausprobiert. `sourcePath` ist der öffentlich
- * erreichbare Pfad der Originaldatei — solange es keinen gibt, bleibt der
- * Link `null` und das UI rendert nur die Seitenzahl.
- *
- * TODO(Schritt 2): `sourcePath` in `documents` speichern (Spalte ergänzen),
- * sobald Uploads persistiert werden.
+ * Nummer `n` hier ist `[n]` im Antworttext.
  */
 export function buildCitations(chunks: readonly RetrievedChunk[]): Citation[] {
   return chunks.map((chunk, index) => ({
@@ -65,7 +70,7 @@ export function buildCitations(chunks: readonly RetrievedChunk[]): Citation[] {
     documentId: chunk.documentId,
     documentTitle: chunk.documentTitle,
     page: chunk.page,
-    href: null,
+    href: citationHref(chunk.documentId, chunk.page),
     snippet: snippet(chunk.content),
   }));
 }
