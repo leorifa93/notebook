@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { ConfigError } from "@/lib/env";
-import { CONFIG_ERROR_MESSAGE } from "@/lib/errors";
+import { CONFIG_ERROR_MESSAGE, isConfigError } from "@/lib/errors";
 import { IngestError, ingestUpload, readUpload, type IngestDeps } from "@/lib/ingest";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
 import { INGEST_RATE_LIMIT, clientIp, consumeRateLimit } from "@/lib/rate-limit";
@@ -56,9 +55,12 @@ export async function handleIngest(
     if (error instanceof IngestError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    // Fehlt DATABASE_URL, scheitert schon das Rate-Limit. Kein Retry-Hinweis.
-    if (error instanceof ConfigError) {
-      console.error("[ingest] configuration missing", { error: error.message });
+    // Fehlt DATABASE_URL oder stimmt sie nicht (Passwort, Schema, SSL),
+    // scheitert schon das Rate-Limit. Warten hilft nicht: kein Retry-Hinweis.
+    if (isConfigError(error)) {
+      console.error("[ingest] configuration error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return NextResponse.json({ error: CONFIG_ERROR_MESSAGE }, { status: 503 });
     }
     console.error("[ingest] failed", {

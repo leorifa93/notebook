@@ -36,6 +36,7 @@ components/
 lib/
   db.ts                 einziger Ort mit `pg`
   pdf.ts                PDF → Seiten
+  text.ts               Textbereinigung ohne Abhängigkeiten (auch im Chat)
   chunk.ts              Seiten → Chunks
   embeddings.ts         Text → Vektor
   retrieval.ts          Frage → Kandidaten

@@ -282,3 +282,98 @@ weiterhin offen und richtig eingeordnet. S6/R9 gilt unverändert für
 Selbst ausgeführt auf `origin/plan/schritt-3-chat`: `npm run typecheck`,
 `npm run lint`, `npm test` (151 Tests in 13 Dateien) und `npm run build`
 grün. Der Build warnt nur über `unpdf` (siehe F4).
+
+## Nacharbeit aus dem frischen Review (3b, erster PR)
+
+Branch `fix/retrieval-und-db-fehler`, nur Backend, keine UI. Vor jedem
+Commit liefen `@tester` und die `@reviewer`-Prüfliste gegen den gestagten
+Diff, danach der Pre-commit-Hook (typecheck, lint, test).
+
+| # | Status | Commit | Kurz |
+| --- | --- | --- | --- |
+| F1 | behoben | `9bdf98a` | iterativer HNSW-Scan in einer Transaktion um die Suche |
+| F2 | behoben | `17e87d6` | Datenbank-Konfigurationsfehler → 503 in Chat, Upload, Quellen |
+| F4 | behoben | `ef4b1d8` | `stripControlChars` in `lib/text.ts`, Chat-Route ohne `unpdf` |
+
+F3, F5–F8 sowie S4, S5 und S6/R9 bleiben offen.
+
+### F1 — behoben
+
+`retrieve()` setzt `SET LOCAL hnsw.iterative_scan = relaxed_order` und
+führt `HYBRID_SQL` in derselben Transaktion aus. Gewählt statt eines höheren
+`hnsw.ef_search`, weil das die Grenze nur verschiebt (bei 41 näheren
+Chunks wäre sie wieder da) und jede Frage teurer macht; der iterative Scan
+sucht nur dann weiter, wenn `LIMIT` nicht erfüllt ist, gedeckelt durch
+`hnsw.max_scan_tuples` (20.000). Verfügbarkeit: PGlite bringt pgvector
+0.8.7 mit (geprüft), Supabase dokumentiert 0.8.0 mit iterativem Scan.
+`SET LOCAL` statt `SET`, weil der Pooler auf Port 6543 im
+Transaktionsmodus läuft. Da `relaxed_order` nur ungefähr sortiert, sammelt
+ein `MATERIALIZED`-CTE (`vector_candidates`) die Treffer, und `vector_hits`
+vergibt den Rang exakt nach Abstand.
+
+Folge für die Typen: `RetrievalDeps.db` und `ChatDeps.db` sind jetzt
+`Database` (mit `transaction`) statt `Queryable`. Die Produktion übergibt
+schon `getDatabase()`, PGlite erfüllt die Schnittstelle ebenfalls.
+
+Test (`tests/unit/retrieval.test.ts`, „retrieve() über den HNSW-Index“):
+300 Chunks einer großen Quelle liegen näher an der Frage als der eine Chunk
+der kleinen; gesucht wird nur in der kleinen. Bei so wenig Daten nimmt
+PGlite sonst Seq-Scan oder den B-Baum auf `document_id`; `enable_sort = off`
+in der Testsitzung lässt nur den HNSW-Pfad übrig, ein eigener Test prüft
+per `EXPLAIN`, dass er wirklich genommen wird. **Ohne den Fix rot**
+(`expected [] to have a length of 1 but got +0`), auch mit dem neuen CTE,
+aber ohne das `SET`. Ein weiterer Test prüft, dass die Einstellung nach der
+Suche nicht in der Sitzung hängen bleibt.
+
+Ehrlich vermerkt: Mit exakt orthogonalen Testvektoren fand auch der
+iterative Scan nichts (entarteter HNSW-Graph); die Testvektoren tragen
+deshalb deterministisches Rauschen wie echte Embeddings.
+
+Restrisiko: Hätte das Supabase-Projekt pgvector < 0.8, scheiterte das
+`SET` mit 42704 bzw. 22023, und der Chat meldete nach F2 einen
+Konfigurationsfehler (42704). Vor dem Merge einmal im SQL-Editor
+`select extversion from pg_extension where extname = 'vector';` prüfen.
+
+### F2 — behoben
+
+`classifyUpstreamError` wertet als `config`: SQLSTATE 28P01, 28000, 3D000,
+42P01, 42883 und zusätzlich 42704 (Typ `vector` oder Parameter fehlt, siehe
+Restrisiko F1); die Node-Codes `ENOTFOUND`, `ECONNREFUSED` und
+Zertifikatsfehler (`SELF_SIGNED_CERT_IN_CHAIN`, `DEPTH_ZERO_SELF_SIGNED_CERT`
+u. a.); ohne Code die Meldungen „Tenant or user not found“ (Supavisor),
+„self-signed certificate“ und „does not support SSL connections“. Die
+Prüfung folgt `cause` und `RetryError.lastError`. `ETIMEDOUT`,
+`ECONNRESET`, 53300 und 40001 bleiben bewusst vorübergehend.
+
+Ingest- und Dokument-Handler prüften bisher nur `instanceof ConfigError`
+und nutzen jetzt dieselbe Klassifizierung (`isConfigError`). Der Upload
+meldet also bei falschem Passwort 503 statt „Die Quelle konnte nicht
+gespeichert werden. Bitte versuche es erneut.“
+
+**Bewusst geändert:** Der Chat-Test „meldet einen Datenbankfehler als 500
+ohne interne Details“ schrieb das alte Verhalten fest (fehlendes Schema →
+500 mit Retry-Hinweis). Er heißt jetzt „meldet ein fehlendes Schema als 503
+ohne Retry-Hinweis (F2)“; ein neuer Test hält fest, dass ein echter
+Laufzeitfehler („Connection terminated unexpectedly“) weiter 500 mit
+Retry-Hinweis bleibt. Neue Tests: 13 Fälle in `errors.test.ts`, zwei im
+Chat, drei für Upload, Quellenliste und Löschen. Vor dem Fix 17 rot.
+
+### F4 — behoben
+
+`stripControlChars` liegt in `lib/text.ts` ohne Abhängigkeiten; `lib/pdf.ts`
+und `app/api/chat/handler.ts` importieren von dort, die Tests dazu stehen
+in `tests/unit/text.test.ts`. `AGENTS.md` nennt die neue Datei.
+
+Gemessen mit `npm run build`: Vorher endete der Import-Trace der
+`unpdf`-Warnung bei `app/api/chat/route.ts`, und die Chat-Route lud einen
+Chunk mit dem `unpdf`-Wrapper samt Verweis auf den pdf.js-Chunk (1,3 MB,
+dort lazy). Nachher nennt der Trace nur noch die Ingest-Route, und das
+Chat-Bundle verweist nicht mehr auf pdf.js. Die Warnung selbst bleibt,
+weil der Ingest `unpdf` braucht. Der Gewinn am Kaltstart ist klein, weil
+pdf.js schon vorher erst beim Parsen geladen wurde. Test: Der Chat-Handler
+lässt sich mit unladbarem `unpdf` (`vi.doMock`) importieren; vor dem Fix rot.
+
+### Testergebnis
+
+`npm run typecheck`, `npm run lint`, `npm test` (173 Tests in 14 Dateien)
+und `npm run build` grün auf `ef4b1d8`.

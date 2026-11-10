@@ -17,7 +17,7 @@ import {
   type ChatRequest,
   type ChatUIMessage,
 } from "@/lib/chat";
-import type { Queryable } from "@/lib/db";
+import type { Database } from "@/lib/db";
 import { existingDocumentIds, isUuid } from "@/lib/documents";
 import {
   classifyUpstreamError,
@@ -26,9 +26,9 @@ import {
 } from "@/lib/errors";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
 import { CHAT_RATE_LIMIT, clientIp, consumeRateLimit } from "@/lib/rate-limit";
-import { stripControlChars } from "@/lib/pdf";
 import { REFUSAL_TEXT, SYSTEM_PROMPT, buildCitations, buildUserPrompt } from "@/lib/prompt";
 import { retrieveAndRerank, type RetrievedChunk } from "@/lib/retrieval";
+import { stripControlChars } from "@/lib/text";
 
 /**
  * Logik hinter POST /api/chat, mit austauschbaren Abhängigkeiten.
@@ -49,7 +49,7 @@ import { retrieveAndRerank, type RetrievedChunk } from "@/lib/retrieval";
  */
 
 export interface ChatDeps {
-  db: Queryable;
+  db: Database;
   embed: (texts: readonly string[]) => Promise<number[][]>;
   /** Lazy, weil `openAiApiKey()` bei fehlendem Key wirft (→ 503, nicht 500). */
   model: () => LanguageModel;
