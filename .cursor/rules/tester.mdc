@@ -64,6 +64,9 @@ müsste, nur einen wertlosen Mock prüft, ein Nicht-Ziel erzwingt, oder
 - [ ] Grenzfälle laut Plan und Review: leeres PDF, gescanntes PDF,
       sehr langer Absatz, doppelter Upload.
 - [ ] Kein Textverlust, Seitenzahlen bleiben am Chunk prüfbar.
+- [ ] Mindestens ein „unsauberer“ Input läuft bis in die DB: NUL-Byte,
+      Steuerzeichen, Sonderzeichen im Dateinamen. Saubere Fixtures allein
+      reichen nicht (Live-Befund L1).
 - [ ] Tests laufen ohne `DATABASE_URL` und ohne `OPENAI_API_KEY`, soweit
       der Schritt das hergibt; echte DB-Tests sind als solche benannt.
 - [ ] Eine Antwort ohne Beleg oder mit erfundener Quelle wäre ein
