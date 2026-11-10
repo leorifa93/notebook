@@ -80,21 +80,27 @@ export async function parsePdf(
   // pdf.js übernimmt den Buffer (transfer) und macht ihn danach unbrauchbar.
   // Der Ingest speichert dieselben Bytes noch als Original, deshalb eine Kopie.
   const pdf = await getDocumentProxy(bytes.slice());
-  if (options.maxPages !== undefined && pdf.numPages > options.maxPages) {
-    throw new PdfPageLimitError(pdf.numPages, options.maxPages);
+  try {
+    if (options.maxPages !== undefined && pdf.numPages > options.maxPages) {
+      throw new PdfPageLimitError(pdf.numPages, options.maxPages);
+    }
+    const { totalPages, text } = await extractText(pdf, { mergePages: false });
+
+    const pages: PdfPage[] = text.map((pageText, index) => ({
+      page: index + 1,
+      text: normalizeText(pageText),
+    }));
+
+    const totalChars = pages.reduce((sum, page) => sum + page.text.length, 0);
+    const probablyScanned =
+      totalPages > 0 && totalChars / totalPages < MIN_CHARS_PER_PAGE;
+
+    return { pages, pageCount: totalPages, probablyScanned };
+  } finally {
+    // pdf.js hält Seitenobjekte und Worker-Ressourcen. In einer warmen
+    // Vercel-Instanz blieben sie sonst pro Upload im Speicher liegen.
+    await pdf.destroy();
   }
-  const { totalPages, text } = await extractText(pdf, { mergePages: false });
-
-  const pages: PdfPage[] = text.map((pageText, index) => ({
-    page: index + 1,
-    text: normalizeText(pageText),
-  }));
-
-  const totalChars = pages.reduce((sum, page) => sum + page.text.length, 0);
-  const probablyScanned =
-    totalPages > 0 && totalChars / totalPages < MIN_CHARS_PER_PAGE;
-
-  return { pages, pageCount: totalPages, probablyScanned };
 }
 
 /**
