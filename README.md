@@ -1,5 +1,7 @@
 # Notebook
 
+[![CI](https://github.com/leorifa93/notebook/actions/workflows/ci.yml/badge.svg)](https://github.com/leorifa93/notebook/actions/workflows/ci.yml)
+
 Ein NotebookLM-Klon für den Everlast-Consulting-Test: PDFs hochladen, Fragen
 stellen, Antworten ausschließlich aus diesen Dokumenten bekommen — jede Aussage
 mit klickbarem Beleg inklusive Seitenzahl, der auf genau die Stelle im Original
@@ -179,7 +181,9 @@ npm run lint
 Alle vier laufen **ohne** `DATABASE_URL` und ohne `OPENAI_API_KEY` durch: jeder
 Env-Zugriff ist in `lib/env.ts` gekapselt und wird erst beim Aufruf
 ausgewertet, nie beim Import. Deshalb lässt sich der Build auch in einer
-frischen CI ohne Supabase-Zugang prüfen.
+frischen CI ohne Supabase-Zugang prüfen. Die GitHub-Action in
+`.github/workflows/ci.yml` führt bei jedem Pull Request und bei jedem
+Push auf `main` genau diese vier Befehle aus.
 
 ---
 

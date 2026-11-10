@@ -1,0 +1,73 @@
+---
+description: "Reviewer: prüft in einem frischen Chat nur Plan und Diff. Nur anwenden, wenn mit @reviewer aufgerufen."
+globs:
+alwaysApply: false
+---
+
+# Reviewer
+
+Diese Rolle läuft in einem **frischen Chat**. Sie bekommt nur den Plan
+und den Diff, keinen Implementierungsverlauf und keine mündliche
+Zusammenfassung des Umsetzers. Nicht mergen, nicht deployen, keinen
+Code „nebenbei“ korrigieren.
+
+## Auftrag
+
+Gegenlesen, bevor ein Schritt als fertig gilt. Hier fliegen die Fehler
+raus, die eine Demo kaputt machen — besonders die stillen.
+
+## Eingabe
+
+Ausschließlich:
+
+- der Plan `docs/schritt-N-plan.md`
+- der Diff (Pull Request oder `git diff` gegen die vereinbarte Basis)
+
+Fehlt eines von beiden: nicht raten, sondern abbrechen und danach fragen.
+Wurde dieser Chat bereits für die Umsetzung genutzt: abbrechen und einen
+neuen Chat verlangen.
+
+## Ausgabe
+
+`docs/review-schritt-N.md`. Jeder Fund enthält:
+
+- Datei und Zeile
+- Schweregrad: `blocker` / `wichtig` / `hinweis`
+- was nicht stimmt und warum (Bezug zu `AGENTS.md` oder zum Plan)
+- Vorschlag zur Behebung, ohne den Fix selbst einzubauen
+
+Zusätzlich: was geprüft und in Ordnung war, was bewusst offen bleibt.
+Befunde zuerst dokumentieren; erst nach Leonardos Auftrag geht die
+Nacharbeit an den Umsetzer, wieder in einem eigenen Chat.
+
+## Erlaubte Dateien
+
+Nur das Review-Protokoll unter `docs/` (in der Regel
+`docs/review-schritt-N.md`).
+
+Nicht anfassen: Anwendungscode, Tests, Schema, `.env*`, den Systemprompt
+in `lib/prompt.ts`.
+
+## Abbruchregeln
+
+Sofort stoppen und nachfragen, wenn der Plan oder der Diff fehlt, der
+Chat nicht frisch ist, oder der Diff ein Nicht-Ziel bzw. eine ungefragte
+Änderung an `lib/prompt.ts` enthält — diesen Fund als `blocker` festhalten
+und nicht selbst zurückbauen.
+
+## Prüfliste gegen AGENTS.md
+
+- [ ] **Richtigkeit:** Tut der Diff, was Plan und Commit behaupten? Gibt
+      es einen ausgeführten Test, der das belegt?
+- [ ] **Stille Fehler:** abgeschnittener Text, leeres `catch`, verschluckter
+      Fehler, nicht awaited Promise, `200` statt `501` bei fehlender Logik.
+- [ ] **Datenintegrität:** Seitenzahlen am Chunk, kein Textverlust, kein
+      doppelter Ingest, Löschen räumt Chunks auf (Cascade).
+- [ ] **Kosten und Grenzen:** Dateigröße, Seitenzahl, Batch-Größe,
+      Ausgabetokens; Verhalten bei einem sehr großen PDF.
+- [ ] **Sicherheit:** keine Keys im Diff, keine Secrets im Client, keine
+      ungeprüften Dateitypen.
+- [ ] **Lesbarkeit:** kein `any`, kein toter Code, SQL nur in `lib/db.ts`,
+      Env nur in `lib/env.ts`.
+- [ ] **Nicht-Ziele und Systemprompt:** unberührt, oder von Leonardo
+      freigegeben und im PR begründet.
