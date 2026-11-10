@@ -255,6 +255,24 @@ dem echten Key aus `.env.local` gegen einen lokalen PGlite-Socket-Server mit
   er danach leer (nachgemessen: 5.390 → 0 Bytes), und in `file_bytes` landete
   eine leere Datei.
 
+## Live-Befund nach dem Merge
+
+**L1 · blocker · NUL-Bytes im PDF-Text.** Beim ersten echten Upload auf
+Vercel (ein Lebenslauf aus Word) meldete die App „Die Quelle konnte nicht
+gespeichert werden“. Das Vercel-Log zeigte
+`invalid byte sequence for encoding "UTF8": 0x00`: pdf.js liefert bei manchen
+PDFs U+0000 im Text, Postgres speichert das in `text` nicht.
+
+- **Behebung:** `stripControlChars()` in `lib/pdf.ts`, angewendet auf PDF- und
+  Textquellen, bevor gechunkt wird (PR #5).
+- **Nachweis:** Ingest-Test mit NUL-Byte gegen PGlite. Ohne Filter schlägt er
+  mit genau dem Live-Fehler fehl, mit Filter speichert er.
+- **Warum es durchgerutscht ist:** Reviewer und Tester haben nur gegen saubere
+  CC0-Fixtures geprüft. PGlite hätte den Fehler gezeigt, der Fall kam in den
+  Daten aber nie vor, und die Prüflisten fragten nicht danach.
+- **Konsequenz:** Neuer Punkt „Externer Text“ in `reviewer.mdc`, neuer Punkt
+  „unsauberer Input bis in die DB“ in `tester.mdc`.
+
 ## Bewusst offen (und warum)
 
 - **Chat, Belege, Seitensprung.** Schritt 3; die Originaldatei liegt dafür
