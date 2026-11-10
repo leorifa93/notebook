@@ -108,3 +108,100 @@ async function insertChunkRows(
     ],
   );
 }
+
+export interface DocumentSummary {
+  id: string;
+  title: string;
+  sourceType: SourceType;
+  pageCount: number;
+  chunkCount: number;
+  sizeBytes: number;
+  /** ISO-8601, damit Server und Client dasselbe Format sehen. */
+  createdAt: string;
+}
+
+export interface NotebookSummary {
+  id: string;
+  title: string;
+}
+
+interface DocumentSummaryRow {
+  id: string;
+  title: string;
+  source_type: SourceType;
+  page_count: number;
+  chunk_count: number;
+  size_bytes: number | null;
+  created_at: Date | string;
+}
+
+/** Notebook-Kopf für die Sidebar; `null`, wenn es die ID nicht gibt. */
+export async function getNotebook(
+  db: Queryable,
+  notebookId: string,
+): Promise<NotebookSummary | null> {
+  const { rows } = await db.query<NotebookSummary>(
+    "SELECT id::text AS id, title FROM notebooks WHERE id = $1",
+    [notebookId],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Quellen eines Notebooks, neueste zuerst. Die Datei selbst wird nicht
+ * gelesen, nur ihre Größe: Die Liste soll nicht Megabytes durch den Pooler
+ * ziehen, um Titel anzuzeigen.
+ */
+export async function listDocuments(
+  db: Queryable,
+  notebookId: string,
+): Promise<DocumentSummary[]> {
+  const { rows } = await db.query<DocumentSummaryRow>(
+    `SELECT
+       d.id::text                     AS id,
+       d.title                        AS title,
+       d.source_type                  AS source_type,
+       d.page_count                   AS page_count,
+       (SELECT count(*)::int FROM chunks c WHERE c.document_id = d.id) AS chunk_count,
+       octet_length(d.file_bytes)     AS size_bytes,
+       d.created_at                   AS created_at
+     FROM documents d
+     WHERE d.notebook_id = $1
+     ORDER BY d.created_at DESC, d.id`,
+    [notebookId],
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    sourceType: row.source_type,
+    pageCount: Number(row.page_count),
+    chunkCount: Number(row.chunk_count),
+    sizeBytes: row.size_bytes === null ? 0 : Number(row.size_bytes),
+    createdAt: new Date(row.created_at).toISOString(),
+  }));
+}
+
+/**
+ * Löscht eine Quelle samt Chunks (ON DELETE CASCADE in db/schema.sql).
+ * Eingeschränkt aufs Notebook, damit eine ID aus einem anderen Notebook
+ * hier nichts löscht. `false`, wenn es nichts zu löschen gab.
+ */
+export async function deleteDocument(
+  db: Queryable,
+  notebookId: string,
+  documentId: string,
+): Promise<boolean> {
+  const { rows } = await db.query<{ id: string }>(
+    "DELETE FROM documents WHERE id = $1 AND notebook_id = $2 RETURNING id::text AS id",
+    [documentId, notebookId],
+  );
+  return rows.length > 0;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Vorab prüfen, sonst wirft Postgres bei `$1::uuid` einen 500er statt 400. */
+export function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
