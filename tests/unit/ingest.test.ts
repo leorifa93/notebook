@@ -407,7 +407,7 @@ describe("Hybrid-SQL aus lib/retrieval.ts gegen gespeicherte Chunks", () => {
     ).json()) as { id: string };
 
     const question = "Wie hoch ist die Kaution insgesamt?";
-    const run = async (documentIds: string[] | null) =>
+    const run = async (documentIds: string[]) =>
       (
         await db.query<{ document_id: string; page: number | null; content: string }>(HYBRID_SQL, [
           toSqlVector(stubEmbedding(question)),
@@ -419,7 +419,7 @@ describe("Hybrid-SQL aus lib/retrieval.ts gegen gespeicherte Chunks", () => {
         ])
       ).rows;
 
-    const all = await run(null);
+    const all = await run([vertrag.id, notiz.id]);
     expect(all[0]?.page).toBe(2);
     expect(all[0]?.content).toContain("3.450 Euro");
 

@@ -1,5 +1,5 @@
-import { query } from "@/lib/db";
-import { embedQuery, toSqlVector } from "@/lib/embeddings";
+import type { Queryable } from "@/lib/db";
+import { toSqlVector } from "@/lib/embeddings";
 
 /**
  * Hybrid-Suche: Vektorsuche + Volltextsuche, dann Fusion per Reciprocal Rank
@@ -24,6 +24,12 @@ export interface RetrievedChunk {
   /** Rang in der jeweiligen Einzelliste, für Debugging und das Eval. */
   vectorRank: number | null;
   textRank: number | null;
+  /**
+   * Kosinus-Ähnlichkeit zur Frage (1 = gleich), `null` bei reinen
+   * Volltexttreffern. Anders als der RRF-Score ist sie absolut und taugt
+   * deshalb als Schwelle für die Absage im Chat.
+   */
+  vectorSimilarity: number | null;
 }
 
 export interface RetrievalOptions {
@@ -31,8 +37,15 @@ export interface RetrievalOptions {
   candidatesPerList?: number;
   /** Wie viele Chunks am Ende zurückkommen (nach Rerank). */
   limit?: number;
-  /** Auf bestimmte Dokumente einschränken; leer = alle. */
-  documentIds?: string[];
+}
+
+/**
+ * Datenbank und Embedding kommen von außen, wie beim Ingest: Produktion
+ * verdrahtet Supabase und OpenAI, die Tests PGlite und Stub-Vektoren.
+ */
+export interface RetrievalDeps {
+  db: Queryable;
+  embed: (texts: readonly string[]) => Promise<number[][]>;
 }
 
 const DEFAULT_CANDIDATES = 20;
@@ -49,6 +62,7 @@ interface CandidateRow {
   content: string;
   vector_rank: number | string | null;
   text_rank: number | string | null;
+  vector_similarity: number | string | null;
   rrf_score: number | string;
 }
 
@@ -90,10 +104,11 @@ WITH text_query AS (
 vector_hits AS (
   SELECT
     c.id AS chunk_id,
-    ROW_NUMBER() OVER (ORDER BY c.embedding <=> $1::vector) AS rank
+    ROW_NUMBER() OVER (ORDER BY c.embedding <=> $1::vector) AS rank,
+    1 - (c.embedding <=> $1::vector) AS similarity
   FROM chunks c
   WHERE c.embedding IS NOT NULL
-    AND ($3::uuid[] IS NULL OR c.document_id = ANY($3::uuid[]))
+    AND c.document_id = ANY($3::uuid[])
   ORDER BY c.embedding <=> $1::vector
   LIMIT $2
 ),
@@ -106,7 +121,7 @@ text_hits AS (
   FROM chunks c, text_query q
   WHERE q.q IS NOT NULL
     AND to_tsvector('german', c.content) @@ q.q
-    AND ($3::uuid[] IS NULL OR c.document_id = ANY($3::uuid[]))
+    AND c.document_id = ANY($3::uuid[])
   ORDER BY ts_rank_cd(to_tsvector('german', c.content), q.q) DESC
   LIMIT $2
 ),
@@ -115,6 +130,7 @@ fused AS (
     COALESCE(v.chunk_id, t.chunk_id) AS chunk_id,
     v.rank AS vector_rank,
     t.rank AS text_rank,
+    v.similarity AS vector_similarity,
     COALESCE(1.0 / ($5::float + v.rank), 0) + COALESCE(1.0 / ($5::float + t.rank), 0) AS rrf_score
   FROM vector_hits v
   FULL OUTER JOIN text_hits t ON v.chunk_id = t.chunk_id
@@ -128,6 +144,7 @@ SELECT
   c.content               AS content,
   f.vector_rank           AS vector_rank,
   f.text_rank             AS text_rank,
+  f.vector_similarity     AS vector_similarity,
   f.rrf_score             AS rrf_score
 FROM fused f
 JOIN chunks c ON c.id = f.chunk_id
@@ -137,31 +154,32 @@ LIMIT $6
 `;
 
 /**
- * Holt Kandidaten für eine Frage.
+ * Holt Kandidaten für eine Frage aus den angegebenen Dokumenten.
  *
- * TODO(Schritt 3): Diese Funktion in app/api/chat/route.ts aufrufen und das
- * Ergebnis in lib/prompt.ts einsetzen.
+ * `documentIds` ist Pflicht: Eine leere Auswahl heißt „keine Quelle“, nicht
+ * „alle Quellen“. Früher wurde aus `[]` ein `NULL` und die Suche lief über
+ * alle Dokumente, auch abgewählte. Jetzt gibt es dann weder Embedding noch
+ * Abfrage, sondern eine leere Liste.
  */
 export async function retrieve(
   question: string,
+  documentIds: readonly string[],
+  deps: RetrievalDeps,
   options: RetrievalOptions = {},
 ): Promise<RetrievedChunk[]> {
   const candidates = options.candidatesPerList ?? DEFAULT_CANDIDATES;
   const limit = options.limit ?? DEFAULT_LIMIT;
-  const documentIds =
-    options.documentIds && options.documentIds.length > 0
-      ? options.documentIds
-      : null;
 
   const trimmed = question.trim();
-  if (trimmed === "") return [];
+  if (trimmed === "" || documentIds.length === 0) return [];
 
-  const embedding = await embedQuery(trimmed);
+  const [embedding] = await deps.embed([trimmed]);
+  if (!embedding) throw new Error("Embedding für die Suchanfrage fehlgeschlagen.");
 
-  const { rows } = await query<CandidateRow>(HYBRID_SQL, [
+  const { rows } = await deps.db.query<CandidateRow>(HYBRID_SQL, [
     toSqlVector(embedding),
     candidates,
-    documentIds,
+    [...documentIds],
     trimmed,
     RRF_K,
     limit,
@@ -177,6 +195,7 @@ export async function retrieve(
     score: Number(row.rrf_score),
     vectorRank: row.vector_rank === null ? null : Number(row.vector_rank),
     textRank: row.text_rank === null ? null : Number(row.text_rank),
+    vectorSimilarity: row.vector_similarity === null ? null : Number(row.vector_similarity),
   }));
 }
 
@@ -188,12 +207,14 @@ export async function retrieve(
  * weitere Fehlerquelle in der Live-Demo. Deshalb ist hier nur der Platz
  * vorgesehen.
  *
- * TODO(Schritt 3, optional): Rerank implementieren oder bewusst weglassen und
- * im README begründen. Aktuell identisch mit `retrieve`.
+ * TODO(Schritt 4): Anhand des Evals entscheiden, ob Rerank kommt, und im
+ * README begründen. Aktuell identisch mit `retrieve`.
  */
 export async function retrieveAndRerank(
   question: string,
+  documentIds: readonly string[],
+  deps: RetrievalDeps,
   options: RetrievalOptions = {},
 ): Promise<RetrievedChunk[]> {
-  return retrieve(question, options);
+  return retrieve(question, documentIds, deps, options);
 }

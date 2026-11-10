@@ -57,13 +57,6 @@ export async function embedTexts(texts: readonly string[]): Promise<number[][]> 
   return vectors;
 }
 
-/** Ein einzelnes Embedding für die Suchanfrage. */
-export async function embedQuery(text: string): Promise<number[]> {
-  const [vector] = await embedTexts([text]);
-  if (!vector) throw new Error("Embedding für die Suchanfrage fehlgeschlagen.");
-  return vector;
-}
-
 /**
  * Formatiert einen Vektor als pgvector-Literal: `[0.1,0.2,...]`.
  *

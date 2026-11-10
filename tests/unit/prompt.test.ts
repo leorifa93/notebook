@@ -19,6 +19,7 @@ function chunk(overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
     score: 0.5,
     vectorRank: 1,
     textRank: 2,
+    vectorSimilarity: 0.6,
     ...overrides,
   };
 }
