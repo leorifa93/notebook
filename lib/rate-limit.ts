@@ -22,8 +22,16 @@ export const INGEST_RATE_LIMIT: RateLimitRule = {
   windowSeconds: 15 * 60,
 };
 
-// TODO(Schritt 3): CHAT_RATE_LIMIT definieren und in app/api/chat/route.ts
-// mit consumeRateLimit() verdrahten, sobald die Route nicht mehr 501 liefert.
+/**
+ * 20 Fragen pro 15 Minuten und IP. Eigenes Kontingent, damit Uploads in der
+ * Demo nicht den Chat sperren. Eine Frage kostet ~0,001 $; auch bei
+ * Dauerbeschuss bleibt das Guthaben des Demo-Keys damit über Tage stehen.
+ */
+export const CHAT_RATE_LIMIT: RateLimitRule = {
+  endpoint: "chat",
+  limit: 20,
+  windowSeconds: 15 * 60,
+};
 
 export interface RateLimitResult {
   allowed: boolean;

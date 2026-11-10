@@ -8,6 +8,7 @@ import type { Citation } from "@/lib/prompt";
 import { ConfigError } from "@/lib/env";
 import { MIN_SIMILARITY, shouldRefuse } from "@/lib/chat";
 import { REFUSAL_TEXT, SYSTEM_PROMPT } from "@/lib/prompt";
+import { CHAT_RATE_LIMIT } from "@/lib/rate-limit";
 import { retrieve } from "@/lib/retrieval";
 
 import { hangingModel, mockModel, readStream, streamedText, textParts } from "../helpers/chat";
@@ -349,5 +350,45 @@ describe("POST /api/chat: Fehler", () => {
     const error = chunks.find((chunk) => chunk.type === "error");
     expect(error?.errorText).toContain("zu lange gedauert");
     expect(chunks.at(-1)?.type).toBe("finish");
+  });
+});
+
+describe("POST /api/chat: Rate-Limit", () => {
+  it("weist die 21. Frage derselben IP in 15 Minuten mit 429 ab, ohne Modellaufruf", async () => {
+    const headers = { "x-forwarded-for": "203.0.113.7" };
+    for (let i = 0; i < CHAT_RATE_LIMIT.limit; i += 1) {
+      const ok = await handleChat(
+        chatRequest({ question: KAUTION, documentIds: [vertragId] }, headers),
+        depsWith(),
+      );
+      expect(ok.status).toBe(200);
+      await ok.text();
+    }
+
+    const model = mockModel();
+    const blocked = await handleChat(
+      chatRequest({ question: KAUTION, documentIds: [vertragId] }, headers),
+      depsWith({ model: () => model }),
+    );
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(await errorOf(blocked)).toMatch(/^Zu viele Fragen in kurzer Zeit\. Bitte versuche es in \d+ Minuten? erneut\.$/);
+    expect(model.doStreamCalls).toHaveLength(0);
+
+    const otherIp = await handleChat(
+      chatRequest({ question: KAUTION, documentIds: [vertragId] }, { "x-forwarded-for": "198.51.100.1" }),
+      depsWith(),
+    );
+    expect(otherIp.status).toBe(200);
+  });
+
+  it("zählt ungültige Anfragen nicht", async () => {
+    const headers = { "x-forwarded-for": "203.0.113.8" };
+    await handleChat(chatRequest({ question: KAUTION, documentIds: [] }, headers), depsWith());
+    const { rows } = await db.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM rate_limit_events WHERE ip = $1",
+      ["203.0.113.8"],
+    );
+    expect(rows[0]?.n).toBe(0);
   });
 });

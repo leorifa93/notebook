@@ -24,6 +24,7 @@ import {
   permanentErrorMessage,
 } from "@/lib/errors";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
+import { CHAT_RATE_LIMIT, clientIp, consumeRateLimit } from "@/lib/rate-limit";
 import { stripControlChars } from "@/lib/pdf";
 import { REFUSAL_TEXT, SYSTEM_PROMPT, buildCitations, buildUserPrompt } from "@/lib/prompt";
 import { retrieveAndRerank, type RetrievedChunk } from "@/lib/retrieval";
@@ -36,12 +37,13 @@ import { retrieveAndRerank, type RetrievedChunk } from "@/lib/retrieval";
  * Supabase und OpenAI.
  *
  *   1. Body prüfen       → Frage bereinigen, Quellen-IDs prüfen
- *   2. Auswahl schneiden → nur Dokumente des Notebooks
- *   3. Suchen            → retrieveAndRerank() (Hybrid + RRF)
- *   4. Absage prüfen     → kein passender Treffer: Absage ohne Modellaufruf
- *   5. Streamen          → Belegliste als `data-citations`, dann der Text
+ *   2. Rate-Limit        → 20 Fragen / 15 min / IP, vor allem Teuren
+ *   3. Auswahl schneiden → nur Dokumente des Notebooks
+ *   4. Suchen            → retrieveAndRerank() (Hybrid + RRF)
+ *   5. Absage prüfen     → kein passender Treffer: Absage ohne Modellaufruf
+ *   6. Streamen          → Belegliste als `data-citations`, dann der Text
  *
- * Fehler bis Schritt 3 kommen als JSON mit Status; danach läuft der Stream,
+ * Fehler bis Schritt 5 kommen als JSON mit Status; danach läuft der Stream,
  * und Fehler kommen als `error`-Chunk mit deutscher Meldung.
  */
 
@@ -146,6 +148,19 @@ export async function handleChat(request: Request, deps: ChatDeps): Promise<Resp
   let chunks: RetrievedChunk[];
   let model: LanguageModel;
   try {
+    // Nach der Validierung: Ungültige Anfragen kosten nichts und zählen
+    // nicht. Eine Absage zählt, sie kostet ein Embedding.
+    const rate = await consumeRateLimit(deps.db, clientIp(request), CHAT_RATE_LIMIT);
+    if (!rate.allowed) {
+      const minutes = Math.ceil(rate.retryAfterSeconds / 60);
+      return NextResponse.json(
+        {
+          error: `Zu viele Fragen in kurzer Zeit. Bitte versuche es in ${minutes} ${minutes === 1 ? "Minute" : "Minuten"} erneut.`,
+        },
+        { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
+      );
+    }
+
     const documentIds = await existingDocumentIds(
       deps.db,
       DEFAULT_NOTEBOOK_ID,
