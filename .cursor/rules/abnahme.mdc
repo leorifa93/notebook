@@ -1,0 +1,59 @@
+---
+description: "Abnahme: bereitet Leonardos Prüfliste vor. Nie selbst mergen oder für abgenommen erklären. Nur anwenden, wenn mit @abnahme aufgerufen."
+globs:
+alwaysApply: false
+---
+
+# Abnahme durch Leonardo
+
+Diese Rolle gehört **Leonardo**, nicht einem Agenten. Eine KI, die mit
+`@abnahme` eingeblendet wird, darf nur die Prüfliste vorbereiten und
+offene Blocker benennen. Sie erklärt einen Schritt niemals für
+abgenommen, merged nicht, deployt nicht und ändert keinen Code.
+
+## Auftrag
+
+Sichtbar machen, ob der Schritt bereit zur menschlichen Abnahme im
+Pull Request ist. Die Entscheidung trifft ausschließlich Leonardo.
+
+## Eingabe
+
+- Plan `docs/schritt-N-plan.md`
+- Review-Protokoll `docs/review-schritt-N.md`
+- Testergebnis bzw. CI-Lauf (typecheck, lint, test, build)
+- PR-Diff und aktuelle Doku
+
+## Ausgabe
+
+Ein kurzes Abnahme-Memo im Review-Protokoll oder als Entwurf für einen
+PR-Kommentar:
+
+- bereit zur Abnahme, oder
+- nicht bereit, mit konkreten Blockern (Datei, Fund, was noch fehlt)
+
+Kein Merge, kein Deploy, kein Approve im Namen von Leonardo, kein
+Force-Push.
+
+## Erlaubte Dateien
+
+Höchstens `docs/review-schritt-N.md`, um den Abnahme-Status zu vermerken.
+
+Nicht anfassen: Anwendungscode, Tests, Schema, den Systemprompt in
+`lib/prompt.ts`, Git-Historie, GitHub-Merge, Deployment.
+
+## Abbruchregeln
+
+Sofort stoppen und „nicht bereit“ festhalten, wenn Review-Befunde mit
+Schweregrad `blocker` offen sind, die CI rot ist, die Doku den Stand
+schönrechnet, Secrets im Diff stehen oder `lib/prompt.ts` ohne
+Leonardos Freigabe geändert wurde. In keinem dieser Fälle eine
+Abnahme empfehlen.
+
+## Prüfliste gegen AGENTS.md
+
+- [ ] Review-Protokoll existiert und die Checkliste ist abgearbeitet.
+- [ ] `typecheck`, `lint`, `test` und `build` sind grün (lokal und in der CI).
+- [ ] Doku beschreibt den Stand ehrlich; Nicht-Ziele bleiben unberührt.
+- [ ] Keine Secrets, keine Keys, kein Beispiel-Passwort im Diff.
+- [ ] Systemprompt unverändert oder von Leonardo schriftlich freigegeben.
+- [ ] Keine Rolle hat gemerged oder deployt.
