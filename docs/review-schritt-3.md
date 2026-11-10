@@ -703,3 +703,111 @@ zitierten Aussage.
 
 `npm run typecheck`, `npm run lint`, `npm test` (267 Tests in 18 Dateien)
 und `npm run build` grün. Vorher (main nach #13): 220 Tests in 16 Dateien.
+
+## Abschluss: unsaubere Eingaben und Doku (Plan-Commits 15–16)
+
+Branch `chore/abschluss-schritt-3`. Vor jedem Commit liefen `@tester` und
+die `@reviewer`-Prüfliste gegen den gestagten Diff, danach der
+Pre-commit-Hook.
+
+### Commit 15: unsaubere Eingaben vom Upload bis zur Antwort
+
+Zuerst geprüft, was schon abgedeckt war, um nichts doppelt zu testen:
+NUL und C0-Zeichen in Text, PDF und Frage, BOM am Dateianfang, CRLF,
+reine Leerzeichen, ungültiges UTF-8, Scan-PDF und fremde Tags in Titel und
+Inhalt (einzeln in `buildUserPrompt`). Neu in
+`tests/unit/unsaubere-eingaben.test.ts` sind 14 Tests, dazu 4 in
+`tests/unit/text.test.ts` und das Fixture `fixtures/leer.pdf`.
+
+| # | Eingabe | Ergebnis vorher | Behebung |
+| --- | --- | --- | --- |
+| E1 | NUL-Byte im Dateinamen | Insert scheitert in Postgres, `500` mit „Bitte versuche es erneut“, obwohl ein neuer Versuch nie hilft | `titleFromFileName` bereinigt wie der Inhalt; ein Name nur aus Nullbreiten-Zeichen wird „Unbenannte Quelle“ statt eines unsichtbaren Titels |
+| E2 | weiches Trennzeichen, Nullbreiten-Leerzeichen, Wortverbinder, BOM mitten im Wort | gespeichert, aber für `to_tsvector('german')` ein anderes Wort: „Lebens\u200Blauf“ findet „Lebenslauf“ nie | `cleanText()` in `lib/text.ts` entfernt sie in Inhalt, Titel und Frage (U+200C/U+200D bleiben für Emoji) |
+| E3 | zerlegte Umlaute (NFD, etwa vom Mac) | „Gro\u0308ße“ ergibt einen anderen Wortstamm als die getippte „Größe“, die Volltextsuche findet nichts | `cleanText()` normalisiert auf NFC. Bewusst nicht NFKC, das machte aus „m²“ ein „m2“ im zitierten Text |
+
+Alle drei sind ohne die Behebung rot: 12 der 18 neuen Tests schlagen
+fehl (per Mutation geprüft). Darunter sind die beiden Injection-Tests,
+denn nebenbei sind die F3-Varianten mit Nullbreite oder weichem
+Trennzeichen im Tag (`</que\u200Blle>`) vor dem Prompt entschärft.
+Einzelne Surrogate in der Frage fallen ebenfalls weg, statt als `\ud800`
+im JSON zum Modell zu gehen.
+
+Ohne Befund, als Test festgehalten: UTF-16 mit BOM und Latin-1 werden mit
+„nicht UTF-8-kodiert“ abgelehnt (`422`, keine Zeile). Eine Zeile mit
+20.000 Zeichen ohne Leerzeichen ergibt Chunks innerhalb des Budgets ohne
+verlorenes Zeichen. Ein leeres PDF mit zwei Seiten wird mit `422`
+abgelehnt. Injection aus Dateiname und Inhalt bleibt in Chat **und**
+Zusammenfassung ein einziger Quellenblock, und der Systemprompt bleibt
+unverändert. Fragen mit Emoji laufen durch.
+
+**Bekannte Grenze mit eigenem Test:** Die gesperrte Überschrift
+„A U S B I L D U N G“ findet die Volltextsuche nicht, den Text darunter
+schon. Ein Zusammenziehen einzelner Buchstaben würde auch echte
+Aufzählungen („a b c“) treffen und den zitierten Text ändern; das ist
+kein trivialer Fix. Kippt der Test, ist die Grenze behoben.
+
+**Hinweis für Production:** Die Bereinigung gilt für neue Uploads. Schon
+gespeicherte Chunks bleiben, wie sie sind, bis die Quelle gelöscht und
+neu hochgeladen wird.
+
+### Commit 16: README und Review-Log
+
+README: Stand „Schritt 3 von 4 abgeschlossen“ mit Live-URL, Architektur
+mit Chat und Überblick, Funktionen, Rate-Limits und Fehlertabelle, Setup
+mit Migrationen und dem `DATABASE_URL`-Format mit `uselibpqcompat=true`
+(auch in `.env.example`, ohne Secrets), „Bekannte Grenzen“, Zeile zur
+Chat-Route. Keine Trefferquote, weil es noch kein Eval gibt.
+
+## Schlusszusammenfassung Schritt 3
+
+| PR | Inhalt |
+| --- | --- |
+| #6 | Plan Schritt 3, freigegeben von Leonardo |
+| #7, #8 | 3a: Chat-Backend mit Belegen, Absage, Datei-Route, Rate-Limit, Konfigurationsfehler (Auffälligkeiten 1–7, S1–S3) |
+| #9 | frischer Review über 3a (F1–F8) |
+| #10 | Prüfungen und Review vor jedem Commit (Hook, Rollenregeln) |
+| #11 | Nacharbeit F1 (HNSW bei kleiner Auswahl), F2 (DB-Konfiguration als 503), F4 (Chat ohne `unpdf`) |
+| #12 | 3b: Chat-Oberfläche mit Streaming und Belegkarten (U1–U8) |
+| #13 | Live-Befund L2: doppelter PDF-Text, Kopien in den Treffern, Belegketten, Ausschnitt |
+| #14 | 3b: Zusammenfassung und Fragevorschläge (Z1–Z6), S5 geschlossen |
+| dieser PR | unsaubere Eingaben (E1–E3), README und Review-Log |
+
+**Live-Befunde.** L1 (vor Schritt 3, PR #5): NUL-Bytes aus einem
+Word-PDF ließen den Ingest in Postgres scheitern. In Schritt 3 kam
+dieselbe Falle über das Eingabefeld (Auffälligkeit 7). L2: Ein
+exportierter Lebenslauf kam mit rund 50 % doppeltem Text an. Daraus
+wurden Kopien unter den Treffern, Belegketten wie `[1][2][3][4][5]` und
+Ausschnitte, die die zitierte Stelle nicht zeigten.
+
+**Was die Rollen gefunden haben.** Der Selbst-Review fand S1–S3: die
+unbegrenzte Auswahl, die Schwelle auf dem falschen Kandidaten und
+verschluckte Stream-Fehler. Der frische Reviewer fand mit F1 den
+gravierendsten Fehler des Schritts: Bei kleiner Auswahl konnte die Suche
+still absagen. Mit F2 fand er, dass Konfigurationsfehler zum erneuten
+Versuch rieten. Die Pro-Commit-Reviews fingen U2, U3 und U6 sowie Z1 (Text
+aus den Quellen im Log) und Z3 vor dem Push ab. Playwright gegen den
+lokalen Mock fand U3 und bestätigte U5, Z3 und die Lage der Belegkarte.
+
+**Was die Rollen verpasst haben.** L2 fiel keiner Rolle auf. Alle Tests
+liefen gegen selbst erzeugte PDFs, der Tester prüfte „kein Textverlust“,
+aber nie „kein Text zu viel“. Der Reviewer las den Diff, nicht die Daten
+eines echten Exports. Beide Prüflisten haben seitdem den Punkt (L2). E1–E3
+waren seit Schritt 2 im Code. F3 hatte unsichtbare Zeichen nur als Risiko
+für die Tag-Grenze gesehen, nicht als Grund, warum die Suche ein Wort
+nicht findet. Gefunden hat sie erst der gezielte Test mit unsauberen
+Eingaben. Lehre wie bei L1: Gegen echte, unordentliche Eingaben testen,
+nicht nur gegen saubere Fixtures.
+
+**Bleibt offen** (im README unter „Bekannte Grenzen“): F3 (Rest), F5–F8,
+S4, S6/R9, Safari ignoriert `#page`, ein `[1]` pro Listenzeile,
+Ausschnitt nach Fragewörtern im Chat, Vorschläge über alle Quellen, kein
+Login und kein Verlauf, gesperrte Überschriften, der „Unbelegt“-Hinweis
+(`TODO(Schritt 4)` in `lib/prompt.ts`). Für Schritt 4: Eval mit
+Kalibrierung der Absage-Schwelle und die Frage nach den Stationen aus L2
+(11 statt 12).
+
+### Testergebnis
+
+`npm run typecheck`, `npm run lint`, `npm test` (285 Tests in 19 Dateien)
+und `npm run build` ohne `DATABASE_URL` und `OPENAI_API_KEY` grün. Vorher
+(main nach #14): 267 Tests in 18 Dateien.
