@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 
+import { DEFAULT_NOTEBOOK_ID, DEFAULT_NOTEBOOK_TITLE } from "@/lib/notebooks";
+
 import { createTestDatabase, readSchema } from "../helpers/pglite";
 
 let db: PGlite;
@@ -25,5 +27,15 @@ describe("db/schema.sql gegen PGlite", () => {
 
   it("ist idempotent: ein zweiter Lauf wirft nicht", async () => {
     await expect(db.exec(await readSchema())).resolves.toBeDefined();
+  });
+});
+
+describe("Notebook-Ebene", () => {
+  it("legt das Default-Notebook mit der ID aus lib/notebooks.ts an", async () => {
+    const { rows } = await db.query<{ id: string; title: string }>(
+      "SELECT id::text AS id, title FROM notebooks WHERE id = $1",
+      [DEFAULT_NOTEBOOK_ID],
+    );
+    expect(rows).toEqual([{ id: DEFAULT_NOTEBOOK_ID, title: DEFAULT_NOTEBOOK_TITLE }]);
   });
 });

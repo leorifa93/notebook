@@ -13,6 +13,28 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ----------------------------------------------------------------------------
+-- notebooks: Klammer um Quellen, wie in NotebookLM (Schritt 2).
+--
+-- Die Demo hat genau ein Notebook „Demo" mit fester ID; ein Umschalter ist
+-- bewusst nicht gebaut. Die Ebene kommt trotzdem jetzt, weil sie später
+-- nachzurüsten eine Migration auf bereits hochgeladenen Demo-Daten wäre.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS notebooks (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title      text        NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE notebooks IS
+  'Notebooks. In der Demo nur das Default-Notebook „Demo".';
+
+-- Feste ID, damit Code (lib/notebooks.ts) und Schema dieselbe Zeile meinen,
+-- ohne beim Start nachzuschlagen. ON CONFLICT hält das Skript idempotent.
+INSERT INTO notebooks (id, title)
+VALUES ('00000000-0000-4000-8000-000000000001', 'Demo')
+ON CONFLICT (id) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
 -- documents: ein hochgeladenes Dokument pro Zeile.
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS documents (
@@ -42,6 +64,15 @@ ALTER TABLE documents ADD COLUMN IF NOT EXISTS mime_type  text;
 
 COMMENT ON COLUMN documents.file_bytes IS
   'Originaldatei, geschrieben in derselben Transaktion wie die Chunks.';
+
+-- Jede Quelle gehört genau einem Notebook. Der DEFAULT hängt Dokumente, die
+-- vor Schritt 2 angelegt wurden, beim erneuten Ausführen an „Demo"; der
+-- Ingest setzt die Spalte trotzdem immer explizit. CASCADE: ein gelöschtes
+-- Notebook nimmt Dokumente und (über chunks.document_id) deren Chunks mit.
+ALTER TABLE documents
+  ADD COLUMN IF NOT EXISTS notebook_id uuid NOT NULL
+    DEFAULT '00000000-0000-4000-8000-000000000001'
+    REFERENCES notebooks (id) ON DELETE CASCADE;
 
 -- ----------------------------------------------------------------------------
 -- chunks: die eigentliche Sucheinheit.
@@ -143,6 +174,10 @@ CREATE INDEX IF NOT EXISTS chunks_document_page_idx
 -- Übersicht in der Seitenleiste, neueste zuerst.
 CREATE INDEX IF NOT EXISTS documents_created_at_idx
   ON documents (created_at DESC);
+
+-- Quellenliste eines Notebooks, neueste zuerst; deckt auch den FK für CASCADE.
+CREATE INDEX IF NOT EXISTS documents_notebook_created_idx
+  ON documents (notebook_id, created_at DESC);
 
 -- Zählen im Fenster: "Anfragen dieser IP an diesen Endpoint seit T".
 CREATE INDEX IF NOT EXISTS rate_limit_events_lookup_idx
