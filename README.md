@@ -281,6 +281,11 @@ Feature ist eine zusätzliche Stelle, an der die Live-Demo brechen kann.
   eine Schema-Migration plus Re-Embedding, nicht nur eine Env-Änderung.
 - **Kein OCR.** Gescannte PDFs werden erkannt (`probablyScanned`) und offen
   abgelehnt statt stillschweigend leere Antworten zu liefern.
+- **Kein eigener PDF-Viewer.** „Im Original öffnen, Seite N“ an der
+  Belegkarte öffnet die Datei im PDF-Viewer des Browsers mit `#page=N`.
+  Chrome, Edge und Firefox springen auf die Seite; **Safari ignoriert den
+  Anker** und zeigt Seite 1. Ein eingebetteter pdf.js-Viewer mit Markierung
+  der Fundstelle wäre ein neues Paket samt Worker für einen Browser.
 
 ---
 

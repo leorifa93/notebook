@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ChatPlaceholder } from "@/components/chat-placeholder";
+import { Chat } from "@/components/chat";
 import { SourceSidebar, type SourcesState } from "@/components/source-sidebar";
 import type { DocumentSummary, NotebookSummary } from "@/lib/documents";
 import { MAX_FILE_BYTES, formatMegabytes } from "@/lib/limits";
@@ -10,8 +10,8 @@ import { MAX_FILE_BYTES, formatMegabytes } from "@/lib/limits";
 /**
  * Client-Zustand der Startseite: Quellenliste, Auswahl, Upload, Löschen.
  *
- * Die Auswahl lebt hier und nicht in der Sidebar, weil der Chat in Schritt 3
- * genau diese IDs als `documentIds` an /api/chat schickt. Gespeichert werden
+ * Die Auswahl lebt hier und nicht in der Sidebar, weil der Chat genau
+ * diese IDs als `documentIds` an /api/chat schickt. Gespeichert werden
  * die *abgewählten* IDs: Eine neu hochgeladene Quelle ist damit automatisch
  * ausgewählt, ohne dass jemand daran denken muss.
  */
@@ -139,7 +139,7 @@ export function Workspace() {
     () => (sources.status === "ready" ? sources.documents : []),
     [sources],
   );
-  // TODO(Schritt 3): selectedIds als `documentIds` an POST /api/chat schicken.
+  // Geht als `documentIds` mit jeder Frage an POST /api/chat (components/chat.tsx).
   const selectedIds = useMemo(
     () => documents.filter((document) => !excludedIds.has(document.id)).map((d) => d.id),
     [documents, excludedIds],
@@ -169,8 +169,8 @@ export function Workspace() {
         />
       </div>
       <div className="flex h-screen min-w-0 flex-1 flex-col">
-        <ChatPlaceholder
-          selectedCount={selectedIds.length}
+        <Chat
+          selectedIds={selectedIds}
           totalCount={documents.length}
           onOpenSources={() => setSourcesOpen(true)}
         />
