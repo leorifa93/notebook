@@ -60,3 +60,26 @@ export function splitParagraphs(text: string): string[] {
     .map((paragraph) => paragraph.trim())
     .filter((paragraph) => paragraph.length > 0);
 }
+
+export interface Placement {
+  horizontal: "start" | "end";
+  vertical: "below" | "above";
+}
+
+/**
+ * Wohin die Belegkarte aufklappt. Rechts vom Fenstermittelpunkt öffnet sie
+ * nach links, in der unteren Hälfte nach oben — so bleibt sie ohne
+ * Positionsbibliothek im Fenster. Auf schmalen Fenstern liegt sie ohnehin
+ * als Leiste am unteren Rand (components/citation-popover.tsx).
+ */
+export function popoverPlacement(
+  trigger: { left: number; right: number; top: number; bottom: number },
+  viewport: { width: number; height: number },
+): Placement {
+  const centerX = (trigger.left + trigger.right) / 2;
+  const centerY = (trigger.top + trigger.bottom) / 2;
+  return {
+    horizontal: centerX > viewport.width / 2 ? "end" : "start",
+    vertical: centerY > viewport.height / 2 ? "above" : "below",
+  };
+}

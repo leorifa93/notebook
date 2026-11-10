@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { splitCitations, splitParagraphs } from "@/lib/citations";
+import { popoverPlacement, splitCitations, splitParagraphs } from "@/lib/citations";
 
 describe("splitCitations", () => {
   it("macht aus [n] innerhalb der Belegliste einen Beleg", () => {
@@ -81,5 +81,24 @@ describe("splitParagraphs", () => {
   it("ignoriert Leerraum am Rand und liefert für leeren Text nichts", () => {
     expect(splitParagraphs("\n\nNur einer.\n\n")).toEqual(["Nur einer."]);
     expect(splitParagraphs("   ")).toEqual([]);
+  });
+});
+
+describe("popoverPlacement", () => {
+  const viewport = { width: 1200, height: 800 };
+  const at = (x: number, y: number) => ({ left: x - 10, right: x + 10, top: y - 8, bottom: y + 8 });
+
+  it("klappt links oben nach rechts unten auf", () => {
+    expect(popoverPlacement(at(100, 100), viewport)).toEqual({ horizontal: "start", vertical: "below" });
+  });
+
+  it("klappt am rechten Rand nach links und in der unteren Hälfte nach oben auf", () => {
+    expect(popoverPlacement(at(1100, 100), viewport)).toEqual({ horizontal: "end", vertical: "below" });
+    expect(popoverPlacement(at(100, 700), viewport)).toEqual({ horizontal: "start", vertical: "above" });
+    expect(popoverPlacement(at(1100, 700), viewport)).toEqual({ horizontal: "end", vertical: "above" });
+  });
+
+  it("nimmt genau in der Mitte den Standard (nach rechts unten)", () => {
+    expect(popoverPlacement(at(600, 400), viewport)).toEqual({ horizontal: "start", vertical: "below" });
   });
 });

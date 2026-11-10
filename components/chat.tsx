@@ -148,7 +148,7 @@ export function Chat({ selectedIds, totalCount, onOpenSources }: ChatProps) {
         ) : (
           <ol className="mx-auto flex w-full max-w-3xl flex-col gap-6" aria-label="Verlauf">
             {messages.map((message) => (
-              <li key={message.id} className="animate-fade-in">
+              <li key={message.id}>
                 {message.role === "user" ? (
                   <div className="flex justify-end">
                     <p className="max-w-[85%] whitespace-pre-line rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">

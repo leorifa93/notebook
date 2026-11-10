@@ -3,7 +3,7 @@
 import { AlertTriangle, Loader2, SearchX } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { CitationMarker } from "@/components/citation-marker";
+import { CitationPopover } from "@/components/citation-popover";
 import type { ChatUIMessage } from "@/lib/chat";
 import { messageCitations, messageText } from "@/lib/chat-client";
 import { splitCitations, splitParagraphs, type AnswerSegment } from "@/lib/citations";
@@ -27,7 +27,7 @@ function renderSegments(segments: readonly AnswerSegment[], citations: readonly 
     if (segment.type === "text") return <span key={position}>{segment.text}</span>;
     if (segment.type === "citation") {
       const citation = citations.find((entry) => entry.index === segment.index);
-      if (citation) return <CitationMarker key={position} citation={citation} />;
+      if (citation) return <CitationPopover key={position} citation={citation} />;
     }
     const raw = segment.type === "unknown-citation" ? segment.raw : `[${segment.index}]`;
     return (
@@ -121,7 +121,7 @@ export function ChatAnswer({ message, streaming }: ChatAnswerProps) {
           <ul className="flex flex-wrap gap-1.5">
             {cited.map((citation) => (
               <li key={citation.index}>
-                <CitationMarker citation={citation} variant="chip" />
+                <CitationPopover citation={citation} variant="chip" />
               </li>
             ))}
           </ul>
