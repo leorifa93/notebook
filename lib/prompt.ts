@@ -1,3 +1,4 @@
+import { MAX_CHUNK_CHARS } from "@/lib/chunk";
 import type { RetrievedChunk } from "@/lib/retrieval";
 
 /**
@@ -118,7 +119,10 @@ export function buildUserPrompt(
     const page = chunk.page === null ? "ohne Seitenangabe" : `Seite ${chunk.page}`;
     return [
       `<quelle nr="${index + 1}" dokument="${escapeAttribute(chunk.documentTitle)}" ${page}>`,
-      neutralizeSourceTags(truncate(chunk.content, 2400)),
+      // Kürzt nur, was über dem Chunk-Maximum liegt (Altbestand, Wort ohne
+      // Leerzeichen). Früher 2.400 Zeichen: Chunks bis 2.880 Zeichen verloren
+      // ihr Ende, ohne dass es jemand sah.
+      neutralizeSourceTags(truncate(chunk.content, MAX_CHUNK_CHARS)),
       "</quelle>",
     ].join("\n");
   });

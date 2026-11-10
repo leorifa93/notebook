@@ -52,6 +52,13 @@ const DEFAULTS: Required<ChunkOptions> = {
   maxTokens: 800,
 };
 
+/**
+ * Längster Chunk in Zeichen, den `chunkPages` mit den Standardwerten
+ * erzeugt (`estimateTokens(content) <= maxTokens`). Der Prompt darf darunter
+ * nicht kürzen, sonst sieht das Modell das Ende großer Chunks nie.
+ */
+export const MAX_CHUNK_CHARS = Math.floor(DEFAULTS.maxTokens * CHARS_PER_TOKEN);
+
 /** Grobe Token-Schätzung; bewusst ohne externe Abhängigkeit. */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / CHARS_PER_TOKEN);
