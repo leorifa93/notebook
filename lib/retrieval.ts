@@ -1,4 +1,4 @@
-import type { Queryable } from "@/lib/db";
+import type { Database } from "@/lib/db";
 import { toSqlVector } from "@/lib/embeddings";
 
 /**
@@ -51,7 +51,8 @@ export interface RetrievalOptions {
  * verdrahtet Supabase und OpenAI, die Tests PGlite und Stub-Vektoren.
  */
 export interface RetrievalDeps {
-  db: Queryable;
+  /** `Database` statt `Queryable`: Die Suche braucht eine Transaktion (F1). */
+  db: Database;
   embed: (texts: readonly string[]) => Promise<number[][]>;
 }
 
@@ -73,6 +74,26 @@ interface CandidateRow {
   best_vector_similarity: number | string | null;
   rrf_score: number | string;
 }
+
+/**
+ * F1 aus dem frischen Review von Schritt 3: Der HNSW-Index liefert nur die
+ * `hnsw.ef_search` (Standard 40) nächsten Chunks, der Filter auf die
+ * angehakten Dokumente greift erst danach. Liegen alle 40 in einer großen,
+ * nicht angehakten Quelle, bleibt die Vektorsuche leer und der Chat sagt
+ * still ab, obwohl die kleine Quelle passt.
+ *
+ * Der iterative Scan (pgvector >= 0.8; Supabase und PGlite haben ihn) sucht
+ * im Index weiter, bis `LIMIT` erfüllt ist oder `hnsw.max_scan_tuples`
+ * (20.000) erreicht ist. Ein höheres `hnsw.ef_search` verschöbe die Grenze
+ * nur und kostete bei jeder Frage. `relaxed_order` statt `strict_order`:
+ * bessere Trefferquote, die Reihenfolge stellt `vector_hits` selbst her.
+ *
+ * `SET LOCAL` gilt nur bis zum Ende der Transaktion. Ein `SET` ohne
+ * Transaktion landete beim Supabase-Pooler (Transaktionsmodus) womöglich auf
+ * einer anderen Verbindung als die Suche, oder bliebe dort für fremde
+ * Anfragen hängen.
+ */
+const ITERATIVE_SCAN_SQL = "SET LOCAL hnsw.iterative_scan = relaxed_order";
 
 /**
  * Baut aus der Frage eine ODER-verknüpfte tsquery.
@@ -109,16 +130,26 @@ WITH text_query AS (
            ''
          )::tsquery AS q
 ),
-vector_hits AS (
+vector_candidates AS MATERIALIZED (
+  -- Kann über den HNSW-Index laufen. Mit relaxed_order (siehe
+  -- ITERATIVE_SCAN_SQL) kommen die Treffer nur ungefähr sortiert zurück;
+  -- MATERIALIZED trennt den Index-Scan vom Rang unten.
   SELECT
     c.id AS chunk_id,
-    ROW_NUMBER() OVER (ORDER BY c.embedding <=> $1::vector) AS rank,
-    1 - (c.embedding <=> $1::vector) AS similarity
+    c.embedding <=> $1::vector AS distance
   FROM chunks c
   WHERE c.embedding IS NOT NULL
     AND c.document_id = ANY($3::uuid[])
   ORDER BY c.embedding <=> $1::vector
   LIMIT $2
+),
+vector_hits AS (
+  -- Rang exakt nach Abstand, unabhängig von der Reihenfolge des Index.
+  SELECT
+    chunk_id,
+    ROW_NUMBER() OVER (ORDER BY distance) AS rank,
+    1 - distance AS similarity
+  FROM vector_candidates
 ),
 text_hits AS (
   SELECT
@@ -186,14 +217,17 @@ export async function retrieve(
   const [embedding] = await deps.embed([trimmed]);
   if (!embedding) throw new Error("Embedding für die Suchanfrage fehlgeschlagen.");
 
-  const { rows } = await deps.db.query<CandidateRow>(HYBRID_SQL, [
-    toSqlVector(embedding),
-    candidates,
-    [...documentIds],
-    trimmed,
-    RRF_K,
-    limit,
-  ]);
+  const { rows } = await deps.db.transaction(async (tx) => {
+    await tx.query(ITERATIVE_SCAN_SQL);
+    return tx.query<CandidateRow>(HYBRID_SQL, [
+      toSqlVector(embedding),
+      candidates,
+      [...documentIds],
+      trimmed,
+      RRF_K,
+      limit,
+    ]);
+  });
 
   return rows.map((row) => ({
     chunkId: row.chunk_id,

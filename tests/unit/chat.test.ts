@@ -339,6 +339,9 @@ describe("POST /api/chat: Fehler", () => {
           query: async () => {
             throw new Error('relation "documents" does not exist');
           },
+          transaction: async () => {
+            throw new Error('relation "documents" does not exist');
+          },
         },
       }),
     );
