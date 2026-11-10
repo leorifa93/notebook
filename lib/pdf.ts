@@ -22,6 +22,25 @@ export interface ParsedPdf {
   probablyScanned: boolean;
 }
 
+/**
+ * Das PDF hat mehr Seiten als erlaubt. Eigene Klasse, damit die Route daraus
+ * einen 413 machen kann, statt einen generischen Parse-Fehler zu melden.
+ */
+export class PdfPageLimitError extends Error {
+  constructor(
+    readonly pageCount: number,
+    readonly maxPages: number,
+  ) {
+    super(`PDF hat ${pageCount} Seiten, erlaubt sind ${maxPages}.`);
+    this.name = "PdfPageLimitError";
+  }
+}
+
+export interface ParsePdfOptions {
+  /** Höchstzahl Seiten; geprüft, bevor Text extrahiert wird. */
+  maxPages?: number;
+}
+
 /** Unter dieser Zeichenzahl pro Seite gilt ein PDF als bildbasiert. */
 const MIN_CHARS_PER_PAGE = 40;
 
@@ -44,10 +63,13 @@ function normalizeText(raw: string): string {
 /**
  * Liest ein PDF aus einem Buffer und gibt den Text je Seite zurück.
  *
- * TODO(Schritt 2): In app/api/ingest/route.ts aufrufen. Der Buffer kommt dort
- * aus `await file.arrayBuffer()`.
+ * Das Seitenlimit wird vor der Textextraktion geprüft: ein 500-Seiten-PDF
+ * soll nicht erst komplett gelesen werden, um dann abgelehnt zu werden.
  */
-export async function parsePdf(data: ArrayBuffer | Uint8Array): Promise<ParsedPdf> {
+export async function parsePdf(
+  data: ArrayBuffer | Uint8Array,
+  options: ParsePdfOptions = {},
+): Promise<ParsedPdf> {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
 
   // Ein leeres Buffer erreicht pdf.js sonst mit einer kryptischen Meldung.
@@ -55,7 +77,12 @@ export async function parsePdf(data: ArrayBuffer | Uint8Array): Promise<ParsedPd
     throw new Error("Die Datei ist leer.");
   }
 
-  const pdf = await getDocumentProxy(bytes);
+  // pdf.js übernimmt den Buffer (transfer) und macht ihn danach unbrauchbar.
+  // Der Ingest speichert dieselben Bytes noch als Original, deshalb eine Kopie.
+  const pdf = await getDocumentProxy(bytes.slice());
+  if (options.maxPages !== undefined && pdf.numPages > options.maxPages) {
+    throw new PdfPageLimitError(pdf.numPages, options.maxPages);
+  }
   const { totalPages, text } = await extractText(pdf, { mergePages: false });
 
   const pages: PdfPage[] = text.map((pageText, index) => ({
@@ -71,9 +98,19 @@ export async function parsePdf(data: ArrayBuffer | Uint8Array): Promise<ParsedPd
 }
 
 /**
- * Erkennt den Quelltyp anhand des MIME-Typs bzw. der Dateiendung.
- * Text und Markdown sind vorgesehen, aber in Schritt 1 noch nicht geparst.
+ * Liest Markdown oder reinen Text als *eine* Seite ohne Seitenzahl.
+ *
+ * Kein Markdown-Rendering: Überschriften und Listen bleiben als Text stehen,
+ * das schadet weder der Volltextsuche noch dem Embedding. Kein gültiges UTF-8
+ * wirft, statt Ersatzzeichen still in den Index zu schreiben.
  */
+export function parseTextSource(data: Uint8Array): { page: null; text: string }[] {
+  const decoded = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(data);
+  const text = decoded.replace(/\r\n?/g, "\n").trim();
+  return text ? [{ page: null, text }] : [];
+}
+
+/** Erkennt den Quelltyp anhand des MIME-Typs bzw. der Dateiendung. */
 export function detectSourceType(
   fileName: string,
   mimeType: string,

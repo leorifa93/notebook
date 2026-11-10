@@ -1,4 +1,3 @@
-import type { PdfPage } from "@/lib/pdf";
 
 /**
  * Chunking.
@@ -22,6 +21,16 @@ export interface ChunkOptions {
   overlapTokens?: number;
   /** Maximaltoleranz, bevor ein Absatz hart getrennt wird. */
   maxTokens?: number;
+}
+
+/**
+ * Eine Seite als Eingabe fürs Chunking. `page` ist `null` bei Quellen ohne
+ * Seiten (Markdown, Text) — eine erfundene Seitenzahl wäre im Beleg unehrlich.
+ * `PdfPage` aus lib/pdf.ts ist damit kompatibel.
+ */
+export interface SourcePage {
+  page: number | null;
+  text: string;
 }
 
 export interface Chunk {
@@ -171,7 +180,7 @@ function withOverlap(
  * ergeben entsprechend einen kleinen Chunk — das ist gewollt.
  */
 export function chunkPages(
-  pages: PdfPage[],
+  pages: readonly SourcePage[],
   documentTitle: string,
   options: ChunkOptions = {},
 ): Chunk[] {
@@ -200,7 +209,8 @@ export function chunkPages(
         tokenCount: estimateTokens(content),
         // Der Header hilft dem Embedding, "Seite 7, Vertrag X" von
         // "Seite 7, Anhang Y" zu unterscheiden. Er wird nicht mitzitiert.
-        contextHeader: `${documentTitle} · Seite ${page.page}`,
+        contextHeader:
+          page.page === null ? documentTitle : `${documentTitle} · Seite ${page.page}`,
       });
       previous = content;
       buffer = "";

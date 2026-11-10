@@ -7,7 +7,8 @@ const nextConfig: NextConfig = {
   experimental: {
     // Uploads laufen über Route Handler, nicht über Server Actions. Das Limit
     // hier ist die Obergrenze, die der App Router für Request-Bodies annimmt;
-    // die fachliche Grenze (20 MB, nur PDF) prüft app/api/ingest/route.ts.
+    // die fachliche Grenze (4 MB, 40 Seiten, siehe lib/limits.ts) prüft
+    // lib/ingest.ts.
     serverActions: {
       bodySizeLimit: "10mb",
     },

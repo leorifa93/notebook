@@ -71,7 +71,7 @@ describe("POST /api/ingest", () => {
     expect(response.status).toBe(400);
   });
 
-  it("meldet in Schritt 1 ehrlich, dass Ingestion noch fehlt", async () => {
+  it("weist eine Datei mit PDF-Endung, aber ohne lesbares PDF mit 400 ab", async () => {
     const form = new FormData();
     form.append(
       "file",
@@ -82,6 +82,6 @@ describe("POST /api/ingest", () => {
     const response = await ingestPost(
       new Request("http://localhost/api/ingest", { method: "POST", body: form }),
     );
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(400);
   });
 });
