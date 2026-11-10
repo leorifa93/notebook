@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { stripControlChars } from "@/lib/text";
+import { cleanText, stripControlChars } from "@/lib/text";
 
 describe("stripControlChars", () => {
   it("entfernt NUL-Bytes, die Postgres in text ablehnt", () => {
@@ -13,6 +13,26 @@ describe("stripControlChars", () => {
 
   it("lässt Zeilenumbruch, Tab und Umlaute stehen", () => {
     expect(stripControlChars("Größe\tÜbersicht\nZeile")).toBe("Größe\tÜbersicht\nZeile");
+  });
+});
+
+describe("cleanText", () => {
+  it("entfernt weiches Trennzeichen, Nullbreiten-Leerzeichen, Wortverbinder und ein BOM mitten im Text", () => {
+    expect(cleanText("Lebens\u200Blauf, Aus\u00ADbildung, Kaution\u2060s\uFEFFbetrag")).toBe(
+      "Lebenslauf, Ausbildung, Kautionsbetrag",
+    );
+  });
+
+  it("fügt ein Wort mit weichem Trennzeichen am Zeilenende wieder zusammen", () => {
+    expect(cleanText("Aus\u00AD\nbildung")).toBe("Ausbildung");
+  });
+
+  it("setzt zerlegte Umlaute zusammen (NFC), lässt aber m² und Emoji stehen", () => {
+    expect(cleanText("Gro\u0308ße 80 m² 👨\u200D👩\u200D👧")).toBe("Größe 80 m² 👨\u200D👩\u200D👧");
+  });
+
+  it("entfernt einzelne Surrogate, behält aber Paare", () => {
+    expect(cleanText("Haus \uD800🏠")).toBe("Haus 🏠");
   });
 });
 

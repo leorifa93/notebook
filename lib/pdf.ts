@@ -1,6 +1,6 @@
 import { getDocumentProxy } from "unpdf";
 
-import { stripControlChars } from "@/lib/text";
+import { cleanText } from "@/lib/text";
 
 /**
  * PDF-Parsing.
@@ -165,7 +165,7 @@ export function removeRepeatedBlocks(text: string, minChars = MIN_REPEATED_BLOCK
  * Embeddings, deshalb glätten wir es hier zentral.
  */
 function normalizeText(raw: string): string {
-  return stripControlChars(raw.replace(/\r\n?/g, "\n"))
+  return cleanText(raw.replace(/\r\n?/g, "\n"))
     .replace(/[ \t]+/g, " ")
     // Bindestrich am Zeilenende zusammenführen: "Soft-\nware" -> "Software"
     .replace(/(\p{Ll})-\n(\p{Ll})/gu, "$1$2")
@@ -231,7 +231,7 @@ export async function parsePdf(
  */
 export function parseTextSource(data: Uint8Array): { page: null; text: string }[] {
   const decoded = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(data);
-  const text = stripControlChars(decoded.replace(/\r\n?/g, "\n")).trim();
+  const text = cleanText(decoded.replace(/\r\n?/g, "\n")).trim();
   return text ? [{ page: null, text }] : [];
 }
 

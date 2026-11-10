@@ -240,6 +240,9 @@ def main() -> None:
 
     write_pdf(HERE / "duplikate-beispiel.pdf", [(duplicate_page(), None)], "Duplikate-Beispiel")
 
+    # Leeres PDF: zwei Seiten ohne Inhalt, etwa eine leere Vorlage.
+    write_pdf(HERE / "leer.pdf", [(b"", None), (b"", None)], "Leer")
+
 
 if __name__ == "__main__":
     main()

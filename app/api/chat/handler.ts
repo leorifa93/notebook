@@ -28,7 +28,7 @@ import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
 import { CHAT_RATE_LIMIT, clientIp, consumeRateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { REFUSAL_TEXT, SYSTEM_PROMPT, buildCitations, buildUserPrompt } from "@/lib/prompt";
 import { retrieveAndRerank, type RetrievedChunk } from "@/lib/retrieval";
-import { stripControlChars } from "@/lib/text";
+import { cleanText } from "@/lib/text";
 
 /**
  * Logik hinter POST /api/chat, mit austauschbaren Abhängigkeiten.
@@ -64,7 +64,7 @@ function badRequest(error: string): { ok: false; response: NextResponse } {
 }
 
 /**
- * Prüft den Body. Die Frage wird von Steuerzeichen befreit, bevor sie in
+ * Prüft den Body. Die Frage wird bereinigt (`cleanText`), bevor sie in
  * Embedding und `plainto_tsquery` geht: Ein NUL-Byte ließe Postgres mit
  * `invalid byte sequence for encoding "UTF8": 0x00` abbrechen — dieselbe
  * Falle wie Live-Befund L1, diesmal über das Eingabefeld.
@@ -74,7 +74,7 @@ export function parseChatRequest(body: unknown): Parsed {
   const { question: rawQuestion, documentIds: rawIds } = body as Record<string, unknown>;
 
   const question =
-    typeof rawQuestion === "string" ? stripControlChars(rawQuestion).trim() : "";
+    typeof rawQuestion === "string" ? cleanText(rawQuestion).trim() : "";
   if (question.length === 0) return badRequest(CHAT_MESSAGES.emptyQuestion);
   if (question.length > MAX_QUESTION_CHARS) return badRequest(CHAT_MESSAGES.questionTooLong);
 

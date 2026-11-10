@@ -22,6 +22,7 @@ import {
   parseTextSource,
   type ParsedPdf,
 } from "@/lib/pdf";
+import { cleanText } from "@/lib/text";
 
 /**
  * Ingest-Pipeline ohne HTTP: Datei prüfen, lesen, zerlegen, einbetten,
@@ -70,9 +71,17 @@ export interface ParsedUpload {
   pages: SourcePage[];
 }
 
-/** Dateiname ohne Endung als Titel; Pfadanteile mancher Browser entfernt. */
+/**
+ * Dateiname ohne Endung als Titel; Pfadanteile mancher Browser entfernt.
+ *
+ * Bereinigt wie der Inhalt: Ein NUL-Byte im Dateinamen ließ das Insert in
+ * Postgres scheitern (500 mit „versuche es erneut“, obwohl ein neuer Versuch
+ * nie hilft), ein Name nur aus Nullbreiten-Zeichen ergab einen unsichtbaren
+ * Titel in der Seitenleiste.
+ */
 export function titleFromFileName(fileName: string): string {
-  const base = fileName.split(/[\\/]/).pop() ?? fileName;
+  const cleaned = cleanText(fileName);
+  const base = cleaned.split(/[\\/]/).pop() ?? cleaned;
   const withoutExtension = base.replace(/\.(pdf|md|markdown|txt)$/i, "").trim();
   return withoutExtension || "Unbenannte Quelle";
 }
