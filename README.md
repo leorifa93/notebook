@@ -16,9 +16,8 @@ herum gebaut.
 > Markdown, Text) hochladen, Fragen an die angehakten Quellen stellen,
 > gestreamte Antworten mit klickbaren Belegen und Sprung auf die Seite im
 > Original, ehrliche Absage, wenn es nicht in den Quellen steht, dazu ein
-> belegter Überblick mit drei Fragevorschlägen. Noch offen ist Schritt 4:
-> Eval mit gemessener Trefferquote. Eine solche Zahl gibt es deshalb hier
-> noch nicht.
+> belegter Überblick mit drei Fragevorschlägen. Das Eval aus Schritt 4
+> ist gemessen, siehe [Eval](#eval).
 >
 > **Live:** <https://notebook-coral-seven.vercel.app> (offene Demo ohne
 > Login, siehe [Bekannte Grenzen](#bekannte-grenzen)).
@@ -396,9 +395,42 @@ auf [`docs/review-schritt-3.md`](docs/review-schritt-3.md).
   HNSW-Pfad aus F1 sind nicht als Unit-Test abgedeckt.
 - **S4, kein Timeout vor dem Stream.** Das Embedding der Frage hat kein
   eigenes Zeitlimit. Hängt es, greift erst die Plattform nach 60 s.
+- **Kein „unbelegt“-Hinweis im Chat.** Eine Antwort ohne `[n]` sieht aus
+  wie eine belegte. Im Eval kam das in 57 Antworten nicht vor; der Hinweis
+  bräuchte trotzdem einen Komponententest, und den gibt es ohne jsdom nicht.
+- **Eval-Korpus klein.** Zwölf Chunks, synthetische Fragen; siehe
+  [Eval](#eval).
 - **S6/R9, SQL außerhalb von `lib/db.ts`.** `lib/documents.ts` und
   `lib/summary-store.ts` enthalten eigenes SQL. `AGENTS.md` erlaubt das,
   die Prüflisten der Rollen nicht; das klärt ein eigener PR.
+
+---
+
+## Eval
+
+`npm run eval` schickt 19 Fragen aus [`docs/eval-plan.md`](docs/eval-plan.md)
+durch die echte Pipeline: Upload- und Chat-Handler, echte Embeddings,
+`gpt-4o-mini`, lokale PGlite-Datenbank mit den beiden Fixtures
+(`muster-mietvertrag.pdf`, `produkthandbuch.pdf`). Drei Läufe, Median,
+etwa 70 s und 0,01 USD. Kein CI-Job, weil er einen Key bräuchte.
+
+Lauf vom 10.11.2026 ([`eval/ergebnisse.md`](eval/ergebnisse.md)):
+
+| Metrik | Ergebnis |
+| --- | --- |
+| Recall@5 / Treffer auf Rang 1 | 13/13 / 13/13 |
+| Antwort korrekt / Zitat zeigt auf die erwartete Seite | 13/13 / 13/13 |
+| Absage korrekt (fehlende Info D1–D3, ohne Bezug O1–O3) | 6/6 |
+| Falsche Absagen | 0/13 |
+| Aussagen mit > 2 Belegen, erfundene `[n]`, Markdown-Reste | 0 von 57 Antworten |
+| Prompt-Injection ausgeführt | 0 von 3 |
+
+Die Zahlen sind ehrlich, aber geschönt durch den Korpus: zwölf Chunks aus
+zwei selbst geschriebenen PDFs. Sie belegen, dass die Pipeline wie geplant
+arbeitet, nicht, dass sie mit beliebigen Exporten so gut ist (siehe L2).
+Die Absage-Schwelle bleibt bei 0,25: Beantwortbare Fragen liegen bei 0,49
+bis 0,72, Off-Topic bei 0,12 bis 0,25. Begründung in
+[`eval/ergebnisse.md`](eval/ergebnisse.md#absage-schwelle-min_similarity--025).
 
 ---
 
@@ -416,9 +448,8 @@ auf [`docs/review-schritt-3.md`](docs/review-schritt-3.md).
       klare Fehler, Tests für unsaubere Eingaben.
       Plan: [`docs/schritt-3-plan.md`](docs/schritt-3-plan.md),
       Review: [`docs/review-schritt-3.md`](docs/review-schritt-3.md).
-- [ ] **Schritt 4 — Eval + Feinschliff.** Eval-Set aus `docs/eval-plan.md`
-      implementieren, Absage-Schwelle kalibrieren, Trefferquote messen und
-      hier nennen, Loom-Video.
+- [ ] **Schritt 4 — Eval + Feinschliff.** Eval umgesetzt und gemessen
+      (siehe [Eval](#eval)), Absage-Schwelle geprüft. Offen: Loom-Video.
 
 Ein Eval-Set ist der stärkste einzelne Baustein für den Reviewer, weil es
 zeigt, dass die Pipeline messbar ist und nicht nur gefühlt funktioniert —

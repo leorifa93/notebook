@@ -276,9 +276,8 @@ function sourceBlocks(chunks: readonly CitableChunk[]): string {
  * wurden. Das ist die Grundlage für den Eval-Score und für ein UI-Warnzeichen
  * bei unbelegten Antworten.
  *
- * TODO(Schritt 4): Im Chat-UI als "unbelegt"-Hinweis anzeigen, wenn
- * `usedCitationNumbers` leer ist und die Antwort nicht der Verweigerungstext
- * ist.
+ * Ein „unbelegt“-Hinweis im Chat-UI bleibt eine bekannte Grenze (README):
+ * Das Eval in Schritt 4 fand in 57 Antworten keine ohne Beleg.
  */
 export function extractCitationNumbers(answer: string): number[] {
   const found = new Set<number>();
