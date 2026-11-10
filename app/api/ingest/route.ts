@@ -1,15 +1,24 @@
-import { NextResponse } from "next/server";
+import type { NextResponse } from "next/server";
 
-import { IngestError, readUpload } from "@/lib/ingest";
+import { getDatabase } from "@/lib/db";
+import { embedTexts } from "@/lib/embeddings";
+
+import { handleIngest } from "./handler";
 
 /**
  * POST /api/ingest
  *
- * Nimmt eine Quelle (PDF, Markdown, Text) entgegen:
+ * Nimmt eine Quelle (PDF, Markdown, Text) entgegen und legt sie vollständig
+ * im Default-Notebook ab:
  *
- *   1. Datei lesen und prüfen → readUpload()     (lib/ingest.ts)
- *   2. Parsen                 → parsePdf() bzw. parseTextSource() (lib/pdf.ts)
- *   3. Chunking, Embeddings und Speichern folgen im nächsten Commit.
+ *   1. Prüfen und lesen  → readUpload()    (lib/ingest.ts, lib/pdf.ts)
+ *   2. Chunking          → chunkPages()    (lib/chunk.ts)
+ *   3. Embeddings        → embedTexts()    (lib/embeddings.ts)
+ *   4. Speichern         → insertDocumentWithChunks() (lib/documents.ts),
+ *                          Dokument, Datei und Chunks in einer Transaktion
+ *
+ * Antwort 201: `{ id, title, sourceType, pageCount, chunkCount }`. Bewusst
+ * kein Stream: Ein Demo-PDF ist in wenigen Sekunden fertig.
  *
  * Bewusst als `runtime = "nodejs"`: pg und pdf.js brauchen Node-APIs, auf der
  * Edge-Runtime laufen sie nicht.
@@ -21,37 +30,5 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(request: Request): Promise<NextResponse> {
-  let form: FormData;
-  try {
-    form = await request.formData();
-  } catch {
-    return NextResponse.json(
-      { error: "Der Request-Body ist kein gültiges Multipart-Formular." },
-      { status: 400 },
-    );
-  }
-
-  const file = form.get("file");
-  if (!(file instanceof File)) {
-    return NextResponse.json(
-      { error: "Feld 'file' fehlt oder ist keine Datei." },
-      { status: 400 },
-    );
-  }
-
-  try {
-    const upload = await readUpload(file);
-    return NextResponse.json(
-      {
-        error: "Speichern ist noch nicht implementiert.",
-        received: { title: upload.title, pageCount: upload.pageCount },
-      },
-      { status: 501 },
-    );
-  } catch (error) {
-    if (error instanceof IngestError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    throw error;
-  }
+  return handleIngest(request, { db: getDatabase(), embed: embedTexts });
 }

@@ -1,4 +1,6 @@
-import type { SourcePage } from "@/lib/chunk";
+import { chunkPages, type Chunk, type SourcePage } from "@/lib/chunk";
+import type { Database } from "@/lib/db";
+import { insertDocumentWithChunks, type StoredDocument } from "@/lib/documents";
 import { MAX_FILE_BYTES, MAX_PDF_PAGES, formatMegabytes } from "@/lib/limits";
 import {
   PdfPageLimitError,
@@ -9,7 +11,8 @@ import {
 } from "@/lib/pdf";
 
 /**
- * Ingest-Pipeline ohne HTTP: Datei prüfen und lesen.
+ * Ingest-Pipeline ohne HTTP: Datei prüfen, lesen, zerlegen, einbetten,
+ * speichern.
  *
  * Die Route (app/api/ingest/route.ts) übersetzt nur noch `IngestError` in
  * eine Antwort. So lässt sich jeder Fehlerfall ohne Next.js testen, und die
@@ -146,4 +149,65 @@ export async function readUpload(
     pageCount: 0,
     pages,
   };
+}
+
+export interface IngestDeps {
+  db: Database;
+  embed: (texts: readonly string[]) => Promise<number[][]>;
+  limits?: IngestLimits;
+}
+
+/**
+ * Text, der eingebettet wird: Kontext-Header plus Inhalt. Der Header
+ * („Vertrag · Seite 2") hilft der Vektorsuche, wird aber nicht zitiert und
+ * steht deshalb nicht in `chunks.content`.
+ */
+export function embeddingInput(chunk: Chunk): string {
+  return `${chunk.contextHeader}\n\n${chunk.content}`;
+}
+
+/**
+ * Gelesene Datei → Chunks → Embeddings → eine Transaktion.
+ *
+ * Ein Fehler beim Embedding ist ein Fehler des Dienstes (502), nicht der
+ * Datei; der Nutzer soll wissen, dass ein erneuter Versuch sinnvoll ist.
+ */
+export async function ingestUpload(
+  upload: ParsedUpload,
+  notebookId: string,
+  deps: IngestDeps,
+): Promise<StoredDocument> {
+  const chunks = chunkPages(upload.pages, upload.title);
+  if (chunks.length === 0) {
+    throw new IngestError(422, "Die Datei enthält keinen Text.");
+  }
+
+  let embeddings: number[][];
+  try {
+    embeddings = await deps.embed(chunks.map(embeddingInput));
+  } catch (error) {
+    console.error("[ingest] embedding failed", {
+      title: upload.title,
+      chunkCount: chunks.length,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw new IngestError(
+      502,
+      "Die Embeddings konnten gerade nicht erzeugt werden. Bitte versuche es gleich noch einmal.",
+    );
+  }
+
+  return insertDocumentWithChunks(
+    deps.db,
+    {
+      notebookId,
+      title: upload.title,
+      sourceType: upload.sourceType,
+      mimeType: upload.mimeType,
+      pageCount: upload.pageCount,
+      fileBytes: upload.bytes,
+    },
+    chunks,
+    embeddings,
+  );
 }
