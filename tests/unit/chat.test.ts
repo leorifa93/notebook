@@ -361,6 +361,22 @@ describe("POST /api/chat: Fehler", () => {
     expect(error?.errorText).toBe("Die Antwort ist abgebrochen. Bitte stelle die Frage erneut.");
   });
 
+  it("protokolliert Fehler beim Aufbau des Streams, statt sie zu verschlucken", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const chunks = await readStream(
+        await handleChat(
+          chatRequest({ question: KAUTION, documentIds: [vertragId] }),
+          depsWith({ model: () => ({}) as ReturnType<ChatDeps["model"]> }),
+        ),
+      );
+      expect(chunks.some((chunk) => chunk.type === "error")).toBe(true);
+      expect(spy.mock.calls.some(([message]) => String(message).startsWith("[chat]"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("bricht nach dem Timeout ab und sagt warum", async () => {
     const model = hangingModel();
     const chunks = await readStream(

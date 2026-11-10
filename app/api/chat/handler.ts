@@ -226,7 +226,14 @@ export async function handleChat(request: Request, deps: ChatDeps): Promise<Resp
       }
       writer.write({ type: "finish" });
     },
-    onError: streamErrorMessage,
+    // Fehler außerhalb von streamText (etwa beim Prompt-Bau) landen nur
+    // hier. Ohne Log sähe der Nutzer „abgebrochen“ und Vercel nichts.
+    onError: (error) => {
+      console.error("[chat] stream setup failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return streamErrorMessage(error);
+    },
   });
 
   return createUIMessageStreamResponse({ stream });
