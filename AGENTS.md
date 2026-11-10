@@ -93,20 +93,30 @@ benennen und Rücksprache halten.
 
 ## Definition of Done
 
-Vor jedem Commit:
+Vor jedem Commit erzwingt der Pre-commit-Hook:
 
 ```bash
 npm run typecheck
-npm run build
 npm run lint
+npm test
 ```
 
-Alle drei grün. Zusätzlich:
+Alle drei müssen grün sein. `--no-verify` ist verboten.
 
+Zusätzlich, bevor der Commit entsteht:
+
+- Der Umsetzer ruft `@tester` auf: ein passender Test ist vorhanden und
+  der rot-grün-Weg nachvollziehbar.
+- Der Umsetzer ruft `@reviewer` auf: die Checkliste läuft gegen den
+  gestagten Diff.
+- Offene Befunde werden vor dem Commit behoben, nicht auf das
+  Schrittende verschoben.
 - Kein `.env`-Inhalt, kein Key, kein Token im Diff.
 - Neue Funktionen haben mindestens einen Aufrufer oder einen klaren `TODO`
   mit Schritt-Nummer.
 - README aktualisiert, wenn sich Setup oder Architektur ändern.
+
+`npm run build` läuft in der CI und vor der Abnahme eines Schritts.
 
 ## Commit-Stil
 

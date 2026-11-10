@@ -38,15 +38,24 @@ zwei Sätzen begründbar? Gibt es eine Alternative, die billiger wäre?
   hervorgeht — nicht als Nacherzählung jeder Zeile.
 - Committet klein und sprechend: was geändert wurde und warum.
 - Meldet offene Punkte, statt sie stillschweigend zu umgehen.
+- Ruft vor jedem Commit `@tester` und `@reviewer` auf den gestagten Diff
+  auf und behebt Befunde, bevor der Commit entsteht.
 
-**Muss prüfen:** `npm run typecheck`, `npm run build`, `npm run lint` grün.
+**Muss prüfen:** Hook (`typecheck`, `lint`, `test`) grün, passender Test
+vorhanden, Review-Checkliste auf den gestagten Diff abgearbeitet.
+`--no-verify` ist verboten.
 
 ### 3. Reviewer (Code-Review)
 
-**Aufgabe:** Gegenlesen, bevor ein Schritt als fertig gilt. Der wichtigste
-Durchgang: Hier fliegen die Fehler raus, die eine Demo kaputt machen.
+**Aufgabe:** Gegenlesen, bevor ein Commit entsteht und bevor ein Schritt
+als fertig gilt. Der wichtigste Durchgang: Hier fliegen die Fehler raus,
+die eine Demo kaputt machen.
 
-**Checkliste, die bei jedem Schritt abgearbeitet wird:**
+Die Checkliste läuft vor jedem Commit gegen den gestagten Diff; am
+Schrittende zusätzlich in einem frischen Chat gegen Plan und gesamten
+Diff, mit Protokoll unter `docs/review-schritt-N.md`.
+
+**Checkliste, die bei jedem Commit und am Schrittende abgearbeitet wird:**
 
 - **Richtigkeit:** Tut der Code das, was der Commit behauptet? Gibt es einen Test,
   der das belegt — und wurde er wirklich ausgeführt?
@@ -88,6 +97,7 @@ breitem Fenster.
 - Tests gegen eine echte Datenbank, nicht nur Typen.
 - Grenzfälle: leeres PDF, gescanntes PDF, sehr langer Absatz, doppelter Upload.
 - Trefferquote wird gemessen und im README genannt, auch wenn sie unangenehm ist.
+- Vor jedem Commit: passender Test vorhanden, rot-grün nachvollziehbar.
 
 ### 6. Technischer Redakteur (Doku)
 
@@ -120,13 +130,26 @@ Die Commit-Reihenfolge folgt den Schritten, nicht den Dateien: erst Projekt und
 Werkzeuge, dann Grundgerüst der Oberfläche, dann Datenmodell, dann die Logik in
 der Reihenfolge, in der die Pipeline sie aufruft, zuletzt API und Doku.
 
+## Prüfung vor jedem Commit
+
+Der Review darf nicht erst am Ende eines Schritts laufen. In Teil 3a
+lief die Prüfliste im selben Durchgang wie die Umsetzung; das ist kein
+unabhängiger Blick, und Befunde kommen zu spät. Leonardos Vorgabe vom
+10.11.2026: Vor jedem Commit ruft der Umsetzer `@tester` und `@reviewer`
+auf den gestagten Diff auf und behebt Befunde, bevor der Commit
+entsteht. Ein Pre-commit-Hook erzwingt zusätzlich `typecheck`, `lint`
+und `test`. `--no-verify` ist verboten. Der frische Reviewer-Chat am
+Schrittende bleibt als unabhängiger Blick auf den gesamten Diff.
+
 ## So laufen die Rollen in Cursor
 
 Die Rollendateien liegen unter `.cursor/rules/` als `.mdc`-Dateien. Sie gelten
 nicht automatisch in jedem Chat (`alwaysApply: false`), sondern werden bewusst
 per `@` eingeblendet — etwa `@architekt` oder `@reviewer`. So bleibt jede Rolle
 ein eigener Durchgang mit festem Kontext. Die Agenten diskutieren nicht
-untereinander; ein Reviewer erbt nicht den Implementierungs-Chat.
+untereinander. Der Review am Schrittende läuft in einem frischen Chat
+und erbt nicht den Implementierungsverlauf; der Blick vor jedem Commit
+darf im Umsetzer-Chat auf den gestagten Diff gehen.
 
 Die verbindlichen Projektregeln stehen in `AGENTS.md` und gelten unabhängig von
 der Rolle. Deshalb gibt es keine zusätzliche, immer aktive Projektregel, die
@@ -137,8 +160,8 @@ denselben Text wiederholen würde.
 ```mermaid
 flowchart TD
   A[Neuer Chat: @architekt plant] --> B[Leonardo gibt den Plan frei]
-  B --> C[Neuer Chat: @umsetzer baut]
-  C --> D[Frischer Chat: @reviewer prüft nur Plan und Diff]
+  B --> C[Neuer Chat: @umsetzer baut;<br/>vor jedem Commit @tester und @reviewer]
+  C --> D[Frischer Chat: @reviewer prüft Plan und gesamten Diff]
   D -->|Befund| C
   D -->|sauber| E[@designer prüft die Oberfläche]
   E --> F[Neuer Chat: @tester führt Tests und die vier Checks aus]
@@ -150,8 +173,10 @@ flowchart TD
    `docs/schritt-N-plan.md`.
 2. Leonardo liest den Plan und gibt ihn frei — oder schickt ihn zurück.
 3. Neuer Chat, `@umsetzer` plus den freigegebenen Plan. Bauen und in kleinen
-   Commits festhalten.
-4. **Frischer** Chat, `@reviewer`, nur Plan und Diff. Protokoll nach
+   Commits festhalten. Vor jedem Commit `@tester` (passender Test,
+   rot-grün) und `@reviewer` (Checkliste auf den gestagten Diff);
+   Befunde vorher beheben. `--no-verify` ist verboten.
+4. **Frischer** Chat, `@reviewer`, nur Plan und gesamter Diff. Protokoll nach
    `docs/review-schritt-N.md`. Bei Funden zurück zum Umsetzer, wieder in einem
    eigenen Chat.
 5. `@designer` prüft Hierarchie, Zustände und Belege auf schmalem und breitem
@@ -176,7 +201,8 @@ Schreib den Plan nach docs/schritt-2-plan.md. Noch nicht umsetzen.
 
 ```
 @umsetzer Setze den freigegebenen Plan in docs/schritt-2-plan.md um.
-Kleine, sprechende Commits. Nicht mergen, nicht deployen.
+Kleine, sprechende Commits. Vor jedem Commit @tester und @reviewer
+auf den gestagten Diff. Nicht mergen, nicht deployen.
 ```
 
 **Reviewer**

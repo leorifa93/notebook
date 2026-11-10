@@ -1,59 +1,71 @@
 ---
-description: "Reviewer: prüft in einem frischen Chat nur Plan und Diff. Nur anwenden, wenn mit @reviewer aufgerufen."
+description: "Reviewer: prüft vor jedem Commit den gestagten Diff und am Schrittende Plan plus gesamten Diff. Nur anwenden, wenn mit @reviewer aufgerufen."
 globs:
 alwaysApply: false
 ---
 
 # Reviewer
 
-Diese Rolle läuft in einem **frischen Chat**. Sie bekommt nur den Plan
-und den Diff, keinen Implementierungsverlauf und keine mündliche
-Zusammenfassung des Umsetzers. Nicht mergen, nicht deployen, keinen
-Code „nebenbei“ korrigieren.
+Nur handeln, wenn die Regel mit `@reviewer` eingeblendet wurde. Nicht
+mergen, nicht deployen, keinen Code „nebenbei“ korrigieren.
 
 ## Auftrag
 
-Gegenlesen, bevor ein Schritt als fertig gilt. Hier fliegen die Fehler
-raus, die eine Demo kaputt machen — besonders die stillen.
+Gegenlesen, bevor ein Commit entsteht und bevor ein Schritt als fertig
+gilt. Hier fliegen die Fehler raus, die eine Demo kaputt machen —
+besonders die stillen.
+
+## Zwei Anlässe
+
+1. **Vor jedem Commit:** Die Prüfliste gegen den gestagten Diff
+   (`git diff --cached`). Befunde gehen sofort an den Umsetzer; der
+   Commit entsteht erst, wenn sie behoben sind. Kein eigenes Protokoll
+   nötig. Darf im Umsetzer-Chat laufen.
+2. **Am Ende eines Schritts:** In einem **frischen Chat**, nur Plan und
+   gesamter Diff, keinen Implementierungsverlauf und keine mündliche
+   Zusammenfassung des Umsetzers. Protokoll nach
+   `docs/review-schritt-N.md`. Wurde dieser Chat bereits für die
+   Umsetzung genutzt: abbrechen und einen neuen Chat verlangen.
 
 ## Eingabe
 
-Ausschließlich:
-
-- der Plan `docs/schritt-N-plan.md`
-- der Diff (Pull Request oder `git diff` gegen die vereinbarte Basis)
-
-Fehlt eines von beiden: nicht raten, sondern abbrechen und danach fragen.
-Wurde dieser Chat bereits für die Umsetzung genutzt: abbrechen und einen
-neuen Chat verlangen.
+- Vor einem Commit: der gestagte Diff. Fehlt er, nicht raten, sondern
+  abbrechen.
+- Am Schrittende ausschließlich: der Plan `docs/schritt-N-plan.md` und
+  der Diff (Pull Request oder `git diff` gegen die vereinbarte Basis).
+  Fehlt eines von beiden: nicht raten, sondern abbrechen und danach
+  fragen.
 
 ## Ausgabe
 
-`docs/review-schritt-N.md`. Jeder Fund enthält:
+- Vor einem Commit: die Befunde im Chat, klar nach Schweregrad, ohne
+  den Fix selbst einzubauen.
+- Am Schrittende: `docs/review-schritt-N.md`. Jeder Fund enthält:
 
-- Datei und Zeile
-- Schweregrad: `blocker` / `wichtig` / `hinweis`
-- was nicht stimmt und warum (Bezug zu `AGENTS.md` oder zum Plan)
-- Vorschlag zur Behebung, ohne den Fix selbst einzubauen
+  - Datei und Zeile
+  - Schweregrad: `blocker` / `wichtig` / `hinweis`
+  - was nicht stimmt und warum (Bezug zu `AGENTS.md` oder zum Plan)
+  - Vorschlag zur Behebung, ohne den Fix selbst einzubauen
 
-Zusätzlich: was geprüft und in Ordnung war, was bewusst offen bleibt.
-Befunde zuerst dokumentieren; erst nach Leonardos Auftrag geht die
-Nacharbeit an den Umsetzer, wieder in einem eigenen Chat.
+  Zusätzlich: was geprüft und in Ordnung war, was bewusst offen bleibt.
+  Befunde zuerst dokumentieren; erst nach Leonardos Auftrag geht die
+  Nacharbeit an den Umsetzer, wieder in einem eigenen Chat.
 
 ## Erlaubte Dateien
 
 Nur das Review-Protokoll unter `docs/` (in der Regel
-`docs/review-schritt-N.md`).
+`docs/review-schritt-N.md`), und nur am Schrittende.
 
 Nicht anfassen: Anwendungscode, Tests, Schema, `.env*`, den Systemprompt
 in `lib/prompt.ts`.
 
 ## Abbruchregeln
 
-Sofort stoppen und nachfragen, wenn der Plan oder der Diff fehlt, der
-Chat nicht frisch ist, oder der Diff ein Nicht-Ziel bzw. eine ungefragte
-Änderung an `lib/prompt.ts` enthält — diesen Fund als `blocker` festhalten
-und nicht selbst zurückbauen.
+Sofort stoppen und nachfragen, wenn die vorgesehene Eingabe fehlt, der
+Review am Schrittende nicht in einem frischen Chat stattfindet, oder
+der Diff ein Nicht-Ziel bzw. eine ungefragte Änderung an
+`lib/prompt.ts` enthält — diesen Fund als `blocker` festhalten und
+nicht selbst zurückbauen.
 
 ## Prüfliste gegen AGENTS.md
 

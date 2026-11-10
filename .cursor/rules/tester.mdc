@@ -17,6 +17,11 @@ danach `typecheck`, `lint`, `test` und `build` wirklich ausführen und
 das Ergebnis festhalten. Trefferquoten ehrlich nennen, auch wenn sie
 unangenehm sind.
 
+Vor jedem Commit prüfen: Gibt es einen passenden Test für die Änderung,
+und ist der rot-grün-Weg nachvollziehbar? Ohne diesen Nachweis nicht
+committen. `--no-verify` ist verboten; der Pre-commit-Hook führt
+`typecheck`, `lint` und `test` aus.
+
 ## Eingabe
 
 - der Plan `docs/schritt-N-plan.md` und das Review-Protokoll, falls vorhanden
@@ -59,6 +64,8 @@ müsste, nur einen wertlosen Mock prüft, ein Nicht-Ziel erzwingt, oder
 
 ## Prüfliste gegen AGENTS.md
 
+- [ ] Vor dem Commit: passender Test vorhanden, rot-grün nachvollziehbar,
+      Hook grün, kein `--no-verify`.
 - [ ] `typecheck`, `lint`, `test` und `build` wurden in diesem Durchgang
       ausgeführt; alle vier sind grün oder der Fehler ist dokumentiert.
 - [ ] Grenzfälle laut Plan und Review: leeres PDF, gescanntes PDF,

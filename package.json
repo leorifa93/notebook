@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepare": "husky || true"
   },
   "dependencies": {
     "@ai-sdk/openai": "2.0.140",
@@ -36,6 +37,7 @@
     "autoprefixer": "10.4.21",
     "eslint": "9.39.5",
     "eslint-config-next": "15.5.29",
+    "husky": "9.1.7",
     "postcss": "8.5.6",
     "tailwindcss": "3.4.19",
     "tailwindcss-animate": "1.0.7",
