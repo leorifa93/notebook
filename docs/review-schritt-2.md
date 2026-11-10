@@ -5,7 +5,18 @@ freigegebene Plan [`docs/schritt-2-plan.md`](schritt-2-plan.md) und der Diff
 `git diff chore/agent-rollen...feature/ingest`, ohne den Verlauf der
 Umsetzung (Rolle `@reviewer`, frischer Durchgang).
 
-> Stand dieser Fassung: Befunde dokumentiert, Behebung offen.
+Ablauf: Umsetzer (`@umsetzer`) nach Plan → Reviewer (`@reviewer`) mit
+frischem Blick, Befunde zuerst hier dokumentiert → Behebung durch den
+Umsetzer, je Befund ein Commit → Tester (`@tester`) mit allen vier
+Befehlen ohne Keys plus einem Smoke-Test mit echten Embeddings → Redakteur
+(`@redakteur`) für das README.
+
+## Umfang von Schritt 2
+
+Upload von PDF, Markdown und Text bis in die Datenbank, Notebook-Ebene mit
+Default-Notebook „Demo“, Quellen in der Sidebar an- und abwählbar und
+löschbar, Limits, Rate-Limit für den Upload, eigene CC0-Fixtures, Tests
+gegen PGlite. Kein Chat (bleibt `501` bis Schritt 3).
 
 ## Befunde
 
@@ -101,6 +112,121 @@ eigentliche Ursache.
 `lib/documents.ts` und `lib/rate-limit.ts` nach demselben Muster. Der Code
 folgt `AGENTS.md`, die Prüfliste ist ungenau.
 
+## Behebung
+
+| # | Entscheidung | Commit | Beleg |
+| --- | --- | --- | --- |
+| R1 | übernommen | `ingest: doppelte Uploads pro Notebook mit 409 ablehnen` | SHA-256 in `documents.content_sha256`, Vorabprüfung vor den Embeddings, eindeutiger Teilindex als Netz für gleichzeitige Uploads; 3 Tests (409 ohne Embedding-Aufruf, gleicher Inhalt unter anderem Namen, Index greift) |
+| R2 | übernommen | `ingest: Abschnitte pro Quelle begrenzen, auch für Text und Markdown` | `MAX_CHUNKS_PER_SOURCE = 200`, 413 vor den Embeddings; 2 Tests (Limit ohne Embedding-Aufruf, 3,9 MB Text wird abgelehnt) |
+| R3 | übernommen | `db: Row Level Security auf allen Tabellen einschalten` | `ENABLE ROW LEVEL SECURITY` auf vier Tabellen, Test prüft `pg_class.relrowsecurity` |
+| R4 | übernommen | `ingest: nur text/plain als Text annehmen, nicht jedes text/*` | 2 Tests (HTML, CSV, JS → `unsupported`; `.txt` ohne MIME-Typ → Text) |
+| R5 | übernommen | `ingest: pdf.js-Dokument nach dem Parsen freigeben` | `pdf.destroy()` im `finally`, alle Parser-Tests weiter grün |
+| R6 | abgelehnt | — | siehe unten |
+| R7 | abgelehnt | — | siehe unten |
+| R8 | abgelehnt | — | siehe unten |
+| R9 | vertagt | — | siehe unten |
+| T1 | übernommen | `db: Fehler ruhender Pool-Verbindungen abfangen statt Prozess zu reißen` | Fund des Testers, siehe „Gefundene Fehler“ |
+
+## Abgelehnte Vorschläge (und warum)
+
+- **R6, Advisory Lock fürs Rate-Limit.** Im schlimmsten Fall kommen bei
+  parallelen Anfragen einer IP ein, zwei Uploads mehr durch, also ein paar
+  Cent. Ein Lock bräuchte eine eigene Transaktion pro Zählung über den
+  Pooler und macht den Code schwerer zu erklären. Für eine Demo mit
+  5 $ Guthaben ist die einfache Zählung ausreichend; der Duplikatschutz (R1)
+  fängt den häufigsten Doppelklick ohnehin ab.
+- **R7, Schutz fürs Löschen.** Jeder Schutz ohne Login (Token im Client,
+  Admin-Passwort) wäre Schein-Sicherheit oder ein halbes Auth-System, und
+  Authentifizierung ist laut `AGENTS.md` ein Nicht-Ziel. Steht jetzt offen
+  im README unter „Bewusste Nicht-Ziele“.
+- **R8, eigene Meldung für fehlenden Key.** Der Nutzer der Demo kann an einer
+  fehlenden Konfiguration nichts ändern, und Konfigurationsdetails gehören
+  nicht in eine öffentliche Fehlermeldung. Die Ursache steht im Vercel-Log
+  (`[ingest] embedding failed … OPENAI_API_KEY ist nicht gesetzt`), dort sucht
+  Leonardo zuerst.
+- **R9, Prüfliste in den Rollendateien.** Richtig, aber die Rollendateien
+  gehören zu PR #3. Eine Änderung hier würde zwei Pull Requests vermischen.
+  Vorschlag für einen eigenen kleinen PR: „SQL nur in `lib/`, `pg` nur in
+  `lib/db.ts`“.
+
+## Gefundene Fehler
+
+Alle vier wären in der Demo nicht als Fehler aufgefallen, sondern erst als
+schlechte Antwort, als Timeout oder gar nicht.
+
+**1. Doppelte Uploads verdoppelten die Suchtreffer (R1).**
+Dieselbe Datei zweimal hochgeladen ergab zwei vollständige Kopien. Die
+Hybridsuche hätte jeden Treffer doppelt geliefert, die fünf Belege im Chat
+wären zur Hälfte identisch gewesen, und jeder Doppel-Upload hätte erneut
+Embeddings gekostet. Behoben über einen Inhalts-Hash pro Notebook; der zweite
+Upload bekommt `409` und kostet nichts.
+
+**2. Große Textdateien liefen am Limit vorbei (R2).**
+Das Seitenlimit galt nur für PDFs. Nachgemessen ergibt eine 4-MB-Textdatei
+2.945 Chunks und 47 Embedding-Batches nacheinander. Auf Vercel wäre das ein
+Timeout nach 60 Sekunden gewesen, ohne Meldung, aber mit Kosten. Behoben
+durch ein Limit von 200 Abschnitten pro Quelle, geprüft vor den Embeddings.
+
+**3. Alle Tabellen waren über die Supabase-REST-API offen (R3).**
+Ohne Row Level Security hätte jeder mit dem öffentlichen `anon`-Key des
+Projekts Dokumente lesen oder das Rate-Limit leeren können, an der App
+vorbei. Behoben durch RLS ohne Policies; die App selbst verbindet sich als
+Tabellenbesitzer und ist nicht betroffen.
+
+**4. Eine getrennte Datenbankverbindung warf eine `uncaughtException` (T1).**
+Gefunden vom Tester, nicht im Diff: Beim lokalen Lauf von `next start` gegen
+einen PGlite-Socket-Server wurde der Datenbankprozess beendet, während der
+Pool eine ruhende Verbindung hielt. `pg` meldet das als `error`-Event am
+Pool; ohne Listener wird daraus `⨯ uncaughtException: Connection terminated
+unexpectedly`. Der Supabase-Pooler trennt ruhende Verbindungen regelmäßig,
+auf Vercel kann so eine Exception die Instanz beenden. Der Code stammt aus
+Schritt 1 (`lib/db.ts`), wurde aber erst mit echten Datenbankzugriffen in
+diesem Schritt erreichbar. Behoben mit `pool.on("error", …)`; nachgeprüft:
+Verbindung getrennt → nur noch `[db] idle client error` im Log, nach dem
+Neustart der Datenbank antwortet `GET /api/documents` wieder mit 200.
+
+## Testergebnis (Tester)
+
+Alle vier Befehle in diesem Durchgang ausgeführt, **ohne** `.env.local`,
+`DATABASE_URL` und `OPENAI_API_KEY`:
+
+| Befehl | Ergebnis |
+| --- | --- |
+| `npm run typecheck` | grün |
+| `npm run lint` | grün |
+| `npm run test` | grün, **100 Tests in 9 Dateien**, ~3 s (vorher 56 in 5) |
+| `npm run build` | grün; eine bekannte Webpack-Warnung aus `unpdf` („Critical dependency: the request of a dependency is an expression“), der gebaute Server parst PDFs trotzdem korrekt (Scan → 422 im laufenden `next start`) |
+
+Neu in Schritt 2:
+
+- `tests/unit/ingest.test.ts` (24 Tests): Upload bis zur Zeile in Postgres,
+  Seitenzahl am Chunk, Markdown mit `page = null`, alle Ablehnungen (400,
+  409, 413, 415, 422, 502) jeweils ohne Zeile in `documents`, Rollback bei
+  abgebrochenem Chunk-Insert, Liste, Cascade beim Löschen, 429 bei der
+  neunten Anfrage, Hybrid-SQL aus `lib/retrieval.ts` mit Quellenauswahl.
+- `tests/unit/pdf-parse.test.ts` (9 Tests): echter Parser an den Fixtures,
+  Eval-Fakten auf den erwarteten Seiten, Umlaute, Buffer bleibt erhalten,
+  Seitenlimit, Scan-Erkennung, Text-Parsing inkl. ungültigem UTF-8.
+- `tests/unit/rate-limit.test.ts` (6 Tests), `tests/unit/schema.test.ts`
+  (4 Tests: Indizes, Idempotenz, Default-Notebook, RLS).
+
+Bewusst gestubbt sind nur die Embeddings (deterministisch, normalisiert).
+Datenbank-Tests laufen gegen PGlite, nicht gegen Supabase; die Integration
+mit dem echten Supabase-Projekt prüft Leonardo im Vercel-Preview.
+
+**Smoke-Test mit echten Embeddings (einmal, 10.11.2026).** `next start` mit
+dem echten Key aus `.env.local` gegen einen lokalen PGlite-Socket-Server mit
+`db/schema.sql`, Upload von `fixtures/muster-mietvertrag.pdf` über
+`POST /api/ingest`:
+
+- `201` nach 2,2 s: 6 Seiten, 6 Chunks, Datei mit 5.390 Bytes in
+  `file_bytes`, Hash gesetzt.
+- Jeder Chunk hat ein Embedding mit 1.536 Dimensionen und Norm ≈ 1,000, die
+  Seiten 1 bis 6 stimmen.
+- Derselbe Upload ein zweites Mal: `409`, kein weiterer Embedding-Aufruf.
+- Die Sidebar zeigt „muster-mietvertrag · PDF · 6 Seiten · 6 Abschnitte“,
+  ausgewählt „1 von 1 Quellen“.
+
 ## Geprüft und in Ordnung
 
 - Plan und Commits passen zusammen. Zwei Abweichungen sind begründet: Die
@@ -128,3 +254,28 @@ folgt `AGENTS.md`, die Prüfliste ist ungenau.
 - `parsePdf` kopiert den Buffer, bevor pdf.js ihn übernimmt. Ohne Kopie wäre
   er danach leer (nachgemessen: 5.390 → 0 Bytes), und in `file_bytes` landete
   eine leere Datei.
+
+## Bewusst offen (und warum)
+
+- **Chat, Belege, Seitensprung.** Schritt 3; die Originaldatei liegt dafür
+  schon in `documents.file_bytes`.
+- **Auto-Zusammenfassung und Fragevorschläge.** Schritt 3, laut Plan.
+- **Kein Notebook-Umschalter.** Freigegeben ist nur die Ebene, nicht die
+  Verwaltung mehrerer Notebooks.
+- **Rate-Limit am Chat.** Die Hilfsfunktion steht, verdrahtet wird sie mit
+  der Chat-Route in Schritt 3 (`TODO(Schritt 3)` in `lib/rate-limit.ts`).
+- **Integration gegen echtes Supabase.** Von dieser Maschine aus nicht
+  erreichbar; Nachweis über das Vercel-Preview (Upload, Liste, Löschen).
+
+## Was ein Reviewer in fünf Minuten prüfen kann
+
+1. `npm run test` ohne `.env.local` — laufen die Datenbank-Tests wirklich
+   gegen Postgres (PGlite) und nicht gegen einen Mock?
+2. `lib/documents.ts` — ein `INSERT` für alle Chunks, in derselben
+   Transaktion wie Dokument und Datei?
+3. `db/schema.sql` zweimal im Supabase-SQL-Editor ausführen — läuft der
+   zweite Lauf fehlerfrei?
+4. `fixtures/muster-mietvertrag.pdf` zweimal hochladen — kommt beim zweiten
+   Mal `409`?
+5. `git log` — erzählt die Historie den Weg: Plan, Umsetzung, Review-Befunde,
+   je ein Commit pro Behebung?
