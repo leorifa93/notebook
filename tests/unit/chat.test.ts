@@ -6,7 +6,8 @@ import { handleChat, type ChatDeps } from "@/app/api/chat/handler";
 import { handleIngest } from "@/app/api/ingest/handler";
 import type { Citation } from "@/lib/prompt";
 import { ConfigError } from "@/lib/env";
-import { SYSTEM_PROMPT } from "@/lib/prompt";
+import { MIN_SIMILARITY, shouldRefuse } from "@/lib/chat";
+import { REFUSAL_TEXT, SYSTEM_PROMPT } from "@/lib/prompt";
 import { retrieve } from "@/lib/retrieval";
 
 import { hangingModel, mockModel, readStream, streamedText, textParts } from "../helpers/chat";
@@ -135,6 +136,60 @@ describe("POST /api/chat: Antwort", () => {
     const citations = chunks.find((chunk) => chunk.type === "data-citations")?.data as Citation[];
     expect(citations.length).toBeGreaterThan(0);
     expect(citations.every((citation) => citation.documentId === notizId)).toBe(true);
+  });
+});
+
+describe("POST /api/chat: Absage, wenn keine Quelle passt", () => {
+  it("sagt ohne Modellaufruf, dass es nicht in den Quellen steht, und zitiert nichts", async () => {
+    const model = mockModel();
+    const chunks = await readStream(
+      await handleChat(
+        chatRequest({ question: "Quantenchromodynamik Gluonen", documentIds: [vertragId] }),
+        depsWith({ model: () => model }),
+      ),
+    );
+    expect(model.doStreamCalls).toHaveLength(0);
+    expect(streamedText(chunks)).toBe(REFUSAL_TEXT);
+    const citations = chunks.find((chunk) => chunk.type === "data-citations")?.data;
+    expect(citations).toEqual([]);
+    expect(chunks.at(-1)?.type).toBe("finish");
+  });
+
+  it("fragt das Modell, sobald ein Treffer die Schwelle erreicht", async () => {
+    const model = mockModel();
+    await readStream(
+      await handleChat(chatRequest({ question: KAUTION, documentIds: [vertragId] }), depsWith({ model: () => model })),
+    );
+    expect(model.doStreamCalls).toHaveLength(1);
+  });
+});
+
+describe("shouldRefuse", () => {
+  const base = {
+    chunkId: "c",
+    documentId: "d",
+    documentTitle: "t",
+    page: 1,
+    chunkIndex: 0,
+    content: "x",
+    score: 0.03,
+    vectorRank: 1,
+    textRank: null,
+  };
+
+  it("lehnt ab bei leerer Liste, knapp unter der Schwelle und bei reinen Volltexttreffern", () => {
+    expect(shouldRefuse([])).toBe(true);
+    expect(shouldRefuse([{ ...base, vectorSimilarity: MIN_SIMILARITY - 0.001 }])).toBe(true);
+    expect(shouldRefuse([{ ...base, vectorSimilarity: null, textRank: 1 }])).toBe(true);
+  });
+
+  it("lässt durch, sobald ein Treffer die Schwelle erreicht", () => {
+    expect(
+      shouldRefuse([
+        { ...base, vectorSimilarity: 0.1 },
+        { ...base, vectorSimilarity: MIN_SIMILARITY },
+      ]),
+    ).toBe(false);
   });
 });
 

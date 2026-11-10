@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 
 import type { Citation } from "@/lib/prompt";
+import type { RetrievedChunk } from "@/lib/retrieval";
 
 /**
  * Gemeinsame Typen und Grenzen des Chats, für Route und Client.
@@ -23,6 +24,27 @@ export const CHAT_MAX_OUTPUT_TOKENS = 700;
  * Nutzer unsere Meldung statt eines stillen Plattform-Timeouts.
  */
 export const CHAT_TIMEOUT_MS = 45_000;
+
+/**
+ * Untergrenze der Kosinus-Ähnlichkeit für den besten Treffer. Darunter
+ * antwortet der Chat ohne Modellaufruf mit der Absage (Stufe 1); darüber
+ * entscheidet Regel 3 des Systemprompts (Stufe 2).
+ *
+ * Startwert, freigegeben von Leonardo am 10.11.2026. Kalibrierung an den
+ * Fragen A1–A5 und D1–D3 aus docs/eval-plan.md in Schritt 4.
+ */
+export const MIN_SIMILARITY = 0.25;
+
+/**
+ * Stufe 1 der Absage. Der RRF-Score taugt dafür nicht: Er addiert nur
+ * Ränge und hat immer einen „besten“ Treffer. Reine Volltexttreffer
+ * (`vectorSimilarity = null`) zählen als 0, weil eine ODER-Suche schon über
+ * ein Füllwort trifft.
+ */
+export function shouldRefuse(chunks: readonly RetrievedChunk[]): boolean {
+  const best = Math.max(0, ...chunks.map((chunk) => chunk.vectorSimilarity ?? 0));
+  return best < MIN_SIMILARITY;
+}
 
 /**
  * Data-Parts im Stream. `citations` kommt vor dem ersten Textstück, damit

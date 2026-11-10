@@ -12,6 +12,7 @@ import {
   CHAT_TIMEOUT_MS,
   CHAT_TOP_K,
   MAX_QUESTION_CHARS,
+  shouldRefuse,
   type ChatRequest,
   type ChatUIMessage,
 } from "@/lib/chat";
@@ -24,7 +25,7 @@ import {
 } from "@/lib/errors";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
 import { stripControlChars } from "@/lib/pdf";
-import { SYSTEM_PROMPT, buildCitations, buildUserPrompt } from "@/lib/prompt";
+import { REFUSAL_TEXT, SYSTEM_PROMPT, buildCitations, buildUserPrompt } from "@/lib/prompt";
 import { retrieveAndRerank, type RetrievedChunk } from "@/lib/retrieval";
 
 /**
@@ -37,7 +38,8 @@ import { retrieveAndRerank, type RetrievedChunk } from "@/lib/retrieval";
  *   1. Body prüfen       → Frage bereinigen, Quellen-IDs prüfen
  *   2. Auswahl schneiden → nur Dokumente des Notebooks
  *   3. Suchen            → retrieveAndRerank() (Hybrid + RRF)
- *   4. Streamen          → Belegliste als `data-citations`, dann der Text
+ *   4. Absage prüfen     → kein passender Treffer: Absage ohne Modellaufruf
+ *   5. Streamen          → Belegliste als `data-citations`, dann der Text
  *
  * Fehler bis Schritt 3 kommen als JSON mit Status; danach läuft der Stream,
  * und Fehler kommen als `error`-Chunk mit deutscher Meldung.
@@ -111,6 +113,24 @@ function streamErrorMessage(error: unknown): string {
   return CHAT_MESSAGES.aborted;
 }
 
+/**
+ * Absage im selben Stream-Format wie eine Antwort, damit der Client keinen
+ * Sonderfall braucht: leere Belegliste, dann der Absagetext.
+ */
+function refusalResponse(): Response {
+  const stream = createUIMessageStream<ChatUIMessage>({
+    execute: ({ writer }) => {
+      writer.write({ type: "start" });
+      writer.write({ type: "data-citations", data: [] });
+      writer.write({ type: "text-start", id: "refusal" });
+      writer.write({ type: "text-delta", id: "refusal", delta: REFUSAL_TEXT });
+      writer.write({ type: "text-end", id: "refusal" });
+      writer.write({ type: "finish" });
+    },
+  });
+  return createUIMessageStreamResponse({ stream });
+}
+
 export async function handleChat(request: Request, deps: ChatDeps): Promise<Response> {
   let body: unknown;
   try {
@@ -135,6 +155,7 @@ export async function handleChat(request: Request, deps: ChatDeps): Promise<Resp
       return NextResponse.json({ error: CHAT_MESSAGES.sourcesGone }, { status: 400 });
     }
     chunks = await retrieveAndRerank(question, documentIds, deps, { limit: CHAT_TOP_K });
+    if (shouldRefuse(chunks)) return refusalResponse();
     model = deps.model();
   } catch (error) {
     // Konfiguration (503), OpenAI (502) oder Datenbank (500), siehe errorResponse.
