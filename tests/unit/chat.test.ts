@@ -7,6 +7,7 @@ import { handleIngest } from "@/app/api/ingest/handler";
 import type { Citation } from "@/lib/prompt";
 import { ConfigError } from "@/lib/env";
 import { SYSTEM_PROMPT } from "@/lib/prompt";
+import { retrieve } from "@/lib/retrieval";
 
 import { hangingModel, mockModel, readStream, streamedText, textParts } from "../helpers/chat";
 import { stubEmbed } from "../helpers/embeddings";
@@ -168,6 +169,35 @@ describe("POST /api/chat: Ablehnungen vor jedem teuren Schritt", () => {
     );
     expect(response.status).toBe(400);
     expect(await errorOf(response)).toContain("gibt es nicht mehr");
+  });
+});
+
+describe("POST /api/chat: unsaubere Eingaben (Lehre aus L1)", () => {
+  const dirty = "Wie hoch ist die\u0000 Kau\u0007tion\u001F insgesamt?";
+
+  it("Gegenprobe: ein NUL-Byte in der Frage bricht die Suche in Postgres ab", async () => {
+    await expect(retrieve(dirty, [vertragId], { db, embed: stubEmbed })).rejects.toThrow(/0x00/);
+  });
+
+  it("bereinigt die Frage, bevor sie Embedding und Datenbank erreicht", async () => {
+    const embed = vi.fn(stubEmbed);
+    const response = await handleChat(
+      chatRequest({ question: dirty, documentIds: [vertragId] }),
+      depsWith({ embed }),
+    );
+    expect(response.status).toBe(200);
+    expect(embed).toHaveBeenCalledWith(["Wie hoch ist die Kaution insgesamt?"]);
+    const chunks = await readStream(response);
+    const citations = chunks.find((chunk) => chunk.type === "data-citations")?.data as Citation[];
+    expect(citations[0]?.page).toBe(2);
+  });
+
+  it("behandelt eine Frage nur aus Steuerzeichen als leer", async () => {
+    const response = await handleChat(
+      chatRequest({ question: "\u0000\u0001 ", documentIds: [vertragId] }),
+      depsWith(),
+    );
+    expect(response.status).toBe(400);
   });
 });
 

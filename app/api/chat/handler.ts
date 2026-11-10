@@ -23,6 +23,7 @@ import {
   permanentErrorMessage,
 } from "@/lib/errors";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
+import { stripControlChars } from "@/lib/pdf";
 import { SYSTEM_PROMPT, buildCitations, buildUserPrompt } from "@/lib/prompt";
 import { retrieveAndRerank, type RetrievedChunk } from "@/lib/retrieval";
 
@@ -57,13 +58,18 @@ function badRequest(error: string): { ok: false; response: NextResponse } {
   return { ok: false, response: NextResponse.json({ error }, { status: 400 }) };
 }
 
-/** Prüft den Body, bevor irgendetwas Teures passiert. */
+/**
+ * Prüft den Body. Die Frage wird von Steuerzeichen befreit, bevor sie in
+ * Embedding und `plainto_tsquery` geht: Ein NUL-Byte ließe Postgres mit
+ * `invalid byte sequence for encoding "UTF8": 0x00` abbrechen — dieselbe
+ * Falle wie Live-Befund L1, diesmal über das Eingabefeld.
+ */
 export function parseChatRequest(body: unknown): Parsed {
   if (typeof body !== "object" || body === null) return badRequest(CHAT_MESSAGES.invalidJson);
   const { question: rawQuestion, documentIds: rawIds } = body as Record<string, unknown>;
 
   const question =
-    typeof rawQuestion === "string" ? rawQuestion.trim() : "";
+    typeof rawQuestion === "string" ? stripControlChars(rawQuestion).trim() : "";
   if (question.length === 0) return badRequest(CHAT_MESSAGES.emptyQuestion);
   if (question.length > MAX_QUESTION_CHARS) return badRequest(CHAT_MESSAGES.questionTooLong);
 
