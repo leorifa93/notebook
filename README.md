@@ -12,9 +12,12 @@ Wenn Notebook eine Zahl nennt, soll der Reviewer in zwei Klicks sehen, auf
 welcher Seite sie steht. Alles in diesem Repo ist um diese eine Eigenschaft
 herum gebaut.
 
-> **Stand:** Schritt 1 von 4 — Gerüst, Datenmodell und Prompt-/Retrieval-Logik.
-> Die API-Routen validieren bereits und antworten mit `501`. Was in welchem
-> Schritt dazukommt, steht unter [Nächste Schritte](#nächste-schritte).
+> **Stand:** Schritt 2 von 4 — Ingest mit Notebooks. Quellen (PDF, Markdown,
+> Text) lassen sich hochladen, landen vollständig mit Seitenzahlen und
+> Embeddings in Supabase und erscheinen in der Sidebar, wo man sie an- und
+> abwählen oder löschen kann. **Der Chat antwortet noch mit `501`**, er kommt
+> in Schritt 3. Was in welchem Schritt dazukommt, steht unter
+> [Nächste Schritte](#nächste-schritte).
 
 ---
 
@@ -63,8 +66,58 @@ Der Weg in Worten:
 | `lib/retrieval.ts` | Hybrid-Suche + RRF, fertiges SQL |
 | `lib/prompt.ts` | Systemprompt, Quellenblöcke, Beleg-Extraktion |
 | `lib/env.ts` | alle Env-Zugriffe, lazy geprüft |
-| `app/api/ingest/route.ts` | Upload-Endpoint (Gerüst) |
-| `app/api/chat/route.ts` | Chat-Endpoint (Gerüst) |
+| `lib/ingest.ts` | Upload prüfen, lesen, zerlegen, einbetten, speichern |
+| `lib/documents.ts` | Dokumente schreiben (eine Transaktion), listen, löschen |
+| `lib/rate-limit.ts` | Rate-Limit pro IP, gezählt in Postgres |
+| `lib/limits.ts` | Upload-Grenzen, geteilt von Server und Client |
+| `app/api/ingest/route.ts` | Upload-Endpoint |
+| `app/api/documents/` | Quellen listen (`GET`) und löschen (`DELETE /:id`) |
+| `app/api/chat/route.ts` | Chat-Endpoint (Gerüst, `501` bis Schritt 3) |
+| `components/workspace.tsx` | Client-Zustand: Quellen, Auswahl, Upload, Löschen |
+| `fixtures/` | eigene CC0-Testdokumente (Muster-Mietvertrag, Scan-Beispiel) |
+
+---
+
+## Was Schritt 2 kann
+
+**Notebooks.** Quellen gehören zu einem Notebook, wie in NotebookLM. Die Demo
+hat genau eins, „Demo“, mit fester ID aus `db/schema.sql`; einen
+Notebook-Umschalter gibt es bewusst nicht. Die Ebene kommt trotzdem jetzt,
+weil sie später nachzurüsten eine Migration auf bereits hochgeladenen Daten
+wäre. In der Sidebar ist jede Quelle per Checkbox an- und abwählbar; diese
+Auswahl geht in Schritt 3 als `documentIds` an den Chat. Neue Quellen sind
+automatisch ausgewählt.
+
+**Upload.** `POST /api/ingest` nimmt PDF, Markdown und reinen Text, liest
+PDFs seitenweise, zerlegt in Chunks, erzeugt Embeddings und schreibt
+Dokument, Originaldatei (`bytea`) und Chunks in **einer** Transaktion.
+Antwort `201` mit `{ id, title, sourceType, pageCount, chunkCount }`.
+Markdown und Text haben keine Seiten, ihre Chunks tragen `page = null` statt
+einer erfundenen Seitenzahl.
+
+**Grenzen und Fehler** — alle Meldungen deutsch, ohne Stacktrace:
+
+| Fall | Antwort |
+| --- | --- |
+| Datei über 4 MB | `413` (Vercel schneidet bei ~4,5 MB ab; der Client prüft vorab) |
+| PDF über 40 Seiten | `413`, geprüft vor der Textextraktion |
+| mehr als 200 Abschnitte, auch bei Text und Markdown | `413`, vor den Embeddings |
+| Office, Bilder, HTML, CSV | `415` |
+| Scan-PDF oder Datei ohne Text | `422` (kein OCR, siehe Nicht-Ziele) |
+| leere oder kaputte Datei | `400` |
+| dieselbe Datei schon im Notebook | `409`, ohne erneut einzubetten |
+| mehr als 8 Uploads pro 15 Minuten und IP | `429` mit `Retry-After` |
+| Embedding-Dienst nicht erreichbar | `502`, nichts gespeichert |
+
+**Warum das Rate-Limit schon jetzt.** Die Demo hat keinen Login, und ab
+diesem Schritt ist der Embedding-Pfad öffentlich. Gezählt wird in Postgres
+(`rate_limit_events`) statt in einem externen Dienst: kein neuer Account,
+kein neuer Key.
+
+**Warum Row Level Security.** Supabase veröffentlicht jede Tabelle in
+`public` über seine REST-API, und der `anon`-Key ist dort nicht geheim. Die
+App nutzt diese API nicht, sie spricht über `pg` als Tabellenbesitzer. RLS
+ohne Policies sperrt deshalb nur die REST-API aus.
 
 ---
 
@@ -133,7 +186,9 @@ pgvector ist in Supabase vorinstalliert, ein eigenes Datenbank-Setup entfällt.
 
 **3. Schema einspielen**
 
-Das Skript ist idempotent und kann gefahrlos erneut laufen.
+Das Skript ist idempotent und kann gefahrlos erneut laufen. **Nach jedem
+Schritt, der `db/schema.sql` ändert, erneut ausführen** — Schritt 2 ergänzt
+Notebooks, Dateiinhalt, Duplikatschutz, Rate-Limit-Tabelle und RLS.
 
 Bequemster Weg: Inhalt von `db/schema.sql` im Supabase-Dashboard unter
 **SQL Editor** einfügen und ausführen.
@@ -161,7 +216,15 @@ In `.env.local` zwei Werte eintragen:
   (`platform.openai.com` → Settings → Limits).
 
 Beide Werte gehören später in Vercel unter **Settings → Environment
-Variables**, nicht ins Repo. `.env.local` steht in `.gitignore`.
+Variables** (Production und Preview), nicht ins Repo. `.env.local` steht in
+`.gitignore`.
+
+Meldet die App auf Vercel `self-signed certificate in certificate chain`,
+liegt das an `sslmode=require` in der URL: `pg` behandelt das inzwischen
+wie `verify-full`. Dann `sslmode=require` durch
+`uselibpqcompat=true&sslmode=require` ersetzen. Das ist von dieser
+Entwicklungsmaschine aus nicht geprüft, weil sie keine Postgres-Ports
+erreicht.
 
 **5. Starten**
 
@@ -169,10 +232,15 @@ Variables**, nicht ins Repo. `.env.local` steht in `.gitignore`.
 npm run dev          # http://localhost:3000
 ```
 
+Zum Ausprobieren `fixtures/muster-mietvertrag.pdf` hochladen: sechs Seiten
+mit bekannten Antworten auf bekannten Seiten (siehe
+[`fixtures/README.md`](fixtures/README.md)). Die Demo startet absichtlich
+leer, ein Seed beim Deploy bräuchte den OpenAI-Key in der CI.
+
 **Prüfen, ob alles baut und läuft**
 
 ```bash
-npm run test         # vitest: 56 Tests, ~0,9 s
+npm run test         # vitest: 100 Tests, ~4 s, inkl. Postgres via PGlite
 npm run typecheck    # tsc --noEmit
 npm run build        # next build
 npm run lint
@@ -180,7 +248,10 @@ npm run lint
 
 Alle vier laufen **ohne** `DATABASE_URL` und ohne `OPENAI_API_KEY` durch: jeder
 Env-Zugriff ist in `lib/env.ts` gekapselt und wird erst beim Aufruf
-ausgewertet, nie beim Import. Deshalb lässt sich der Build auch in einer
+ausgewertet, nie beim Import. Die Datenbank-Tests laufen gegen
+[PGlite](https://pglite.dev) mit pgvector, also echtes Postgres im
+Testprozess, mit genau `db/schema.sql`. Gestubbt sind nur die Embeddings
+(deterministisch, normalisiert). Deshalb lässt sich der Build auch in einer
 frischen CI ohne Supabase-Zugang prüfen. Die GitHub-Action in
 `.github/workflows/ci.yml` führt bei jedem Pull Request und bei jedem
 Push auf `main` genau diese vier Befehle aus.
@@ -200,6 +271,12 @@ Feature ist eine zusätzliche Stelle, an der die Live-Demo brechen kann.
   Kernfrage bei: "Stimmt die Antwort und wo steht sie?"
 - **Keine Multi-User-Verwaltung.** Kein Teilen, keine Rollen, kein
   Team-Workspace. Ein Dokument gehört allen.
+- **Kein Notebook-Umschalter.** Die Datenbank kennt Notebooks, die Demo zeigt
+  genau eins. Mehrere Notebooks anlegen und wechseln ist UI-Arbeit ohne
+  Erkenntnisgewinn für die Kernfrage.
+- **Löschen ist offen.** Ohne Login kann jeder Besucher Quellen der Demo
+  entfernen. Das ist der Preis der offenen Demo; das Rate-Limit schützt nur
+  den teuren Pfad (Embeddings).
 - **Keine Vektor-Dimension > 1536.** Ein anderes Embedding-Modell erfordert
   eine Schema-Migration plus Re-Embedding, nicht nur eine Env-Änderung.
 - **Kein OCR.** Gescannte PDFs werden erkannt (`probablyScanned`) und offen
@@ -211,11 +288,16 @@ Feature ist eine zusätzliche Stelle, an der die Live-Demo brechen kann.
 
 - [x] **Schritt 1 — Gerüst.** Next.js, Tailwind, shadcn-Primitives,
       Datenmodell, Retrieval- und Prompt-Logik, Doku.
-- [ ] **Schritt 2 — Ingest.** `parsePdf` → `chunkPages` → `embedTexts` →
-      Insert in einer Transaktion; Upload-UI mit Fortschritt; Seed-PDFs.
-- [ ] **Schritt 3 — Chat.** `retrieve` → `streamText`, Belege im UI als
-      Karten mit Seitenzahl und Sprung ins PDF; Verweigerungstext bei
-      fehlender Antwort.
+- [x] **Schritt 2 — Ingest.** Upload von PDF, Markdown und Text bis ins
+      Schema, eine Transaktion pro Quelle, Notebook „Demo“ mit
+      an-/abwählbaren Quellen, Limits, Duplikatschutz, Rate-Limit, RLS,
+      CC0-Fixtures. Plan: [`docs/schritt-2-plan.md`](docs/schritt-2-plan.md),
+      Review: [`docs/review-schritt-2.md`](docs/review-schritt-2.md).
+- [ ] **Schritt 3 — Chat.** `retrieve` → `streamText` mit der Quellenauswahl
+      als `documentIds`, Belege im UI als Karten mit Seitenzahl und Sprung
+      ins PDF (die Datei liegt seit Schritt 2 in `documents.file_bytes`);
+      Verweigerungstext; Auto-Zusammenfassung und Fragevorschläge nach dem
+      Upload; Rate-Limit am Chat.
 - [ ] **Schritt 4 — Eval + Feinschliff.** Eval-Set aus `docs/eval-plan.md`
       implementieren, Trefferquote messen und im README nennen, Loom-Video.
 

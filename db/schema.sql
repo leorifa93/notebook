@@ -13,6 +13,28 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ----------------------------------------------------------------------------
+-- notebooks: Klammer um Quellen, wie in NotebookLM (Schritt 2).
+--
+-- Die Demo hat genau ein Notebook „Demo" mit fester ID; ein Umschalter ist
+-- bewusst nicht gebaut. Die Ebene kommt trotzdem jetzt, weil sie später
+-- nachzurüsten eine Migration auf bereits hochgeladenen Demo-Daten wäre.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS notebooks (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title      text        NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE notebooks IS
+  'Notebooks. In der Demo nur das Default-Notebook „Demo".';
+
+-- Feste ID, damit Code (lib/notebooks.ts) und Schema dieselbe Zeile meinen,
+-- ohne beim Start nachzuschlagen. ON CONFLICT hält das Skript idempotent.
+INSERT INTO notebooks (id, title)
+VALUES ('00000000-0000-4000-8000-000000000001', 'Demo')
+ON CONFLICT (id) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
 -- documents: ein hochgeladenes Dokument pro Zeile.
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS documents (
@@ -29,6 +51,34 @@ COMMENT ON TABLE documents IS
   'Hochgeladene Quellen. Eine Zeile pro Datei.';
 COMMENT ON COLUMN documents.source_type IS
   'pdf | text | markdown – validiert in detectSourceType() (lib/pdf.ts).';
+
+-- Originaldatei in derselben Zeile (Schritt 2). Der Seitensprung im Chat
+-- (Schritt 3) braucht das Original. Als bytea statt Supabase Storage, damit
+-- Datei, Dokument und Chunks in *einer* Transaktion landen und kein zweiter
+-- Dienst mit eigenen Policies dazukommt. Bei wenigen Dateien unter 4 MB ist
+-- das über TOAST unkritisch; produktiv gehörte das in einen Objektspeicher.
+-- Nullable, weil ALTER TABLE ... ADD COLUMN auf bestehenden Zeilen laufen
+-- muss; der Ingest setzt beide Spalten immer.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_bytes bytea;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS mime_type  text;
+
+COMMENT ON COLUMN documents.file_bytes IS
+  'Originaldatei, geschrieben in derselben Transaktion wie die Chunks.';
+
+-- SHA-256 der Originaldatei. Dieselbe Datei zweimal im selben Notebook ergäbe
+-- doppelte Chunks: Die Suche lieferte jeden Treffer zweimal, und die Top-5
+-- im Chat bestünden zur Hälfte aus Duplikaten. Nullable für Zeilen aus der
+-- Zeit vor dieser Spalte; der eindeutige Index steht unten bei den Indexen.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS content_sha256 text;
+
+-- Jede Quelle gehört genau einem Notebook. Der DEFAULT hängt Dokumente, die
+-- vor Schritt 2 angelegt wurden, beim erneuten Ausführen an „Demo"; der
+-- Ingest setzt die Spalte trotzdem immer explizit. CASCADE: ein gelöschtes
+-- Notebook nimmt Dokumente und (über chunks.document_id) deren Chunks mit.
+ALTER TABLE documents
+  ADD COLUMN IF NOT EXISTS notebook_id uuid NOT NULL
+    DEFAULT '00000000-0000-4000-8000-000000000001'
+    REFERENCES notebooks (id) ON DELETE CASCADE;
 
 -- ----------------------------------------------------------------------------
 -- chunks: die eigentliche Sucheinheit.
@@ -64,6 +114,25 @@ COMMENT ON TABLE chunks IS
   'Chunks mit Seitenzahl und Embedding. Sucheinheit für Vektor- und Volltextsuche.';
 COMMENT ON COLUMN chunks.page IS
   'Seite im Originaldokument, 1-basiert. NULL bei seitenlosen Quellen.';
+
+-- ----------------------------------------------------------------------------
+-- rate_limit_events: ein Eintrag pro gezählter Anfrage (Schritt 2).
+--
+-- Die Demo ist bewusst ohne Login. Ohne Limit kann jeder den Embedding-Pfad
+-- mit dem Demo-Key leerlaufen lassen. In Postgres statt Upstash o. ä.: kein
+-- neuer Account, kein neuer Key, und die Tabelle ist in Supabase sichtbar.
+-- Die Zählung (Fenster, Limit) steckt in lib/rate-limit.ts.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rate_limit_events (
+  id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  ip         text        NOT NULL,
+  -- z. B. 'ingest'; Chat bekommt in Schritt 3 einen eigenen Schlüssel.
+  endpoint   text        NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE rate_limit_events IS
+  'Gezählte Anfragen pro IP und Endpoint für das Rate-Limit der offenen Demo.';
 
 -- ----------------------------------------------------------------------------
 -- Indexe
@@ -111,6 +180,37 @@ CREATE INDEX IF NOT EXISTS chunks_document_page_idx
 -- Übersicht in der Seitenleiste, neueste zuerst.
 CREATE INDEX IF NOT EXISTS documents_created_at_idx
   ON documents (created_at DESC);
+
+-- Kein doppelter Upload pro Notebook, auch nicht bei zwei gleichzeitigen
+-- Requests: Der Ingest prüft vorher (spart Embeddings), dieser Index ist das
+-- Sicherheitsnetz, wenn beide Prüfungen gleichzeitig „frei" sehen.
+CREATE UNIQUE INDEX IF NOT EXISTS documents_notebook_sha256_key
+  ON documents (notebook_id, content_sha256)
+  WHERE content_sha256 IS NOT NULL;
+
+-- Quellenliste eines Notebooks, neueste zuerst; deckt auch den FK für CASCADE.
+CREATE INDEX IF NOT EXISTS documents_notebook_created_idx
+  ON documents (notebook_id, created_at DESC);
+
+-- Zählen im Fenster: "Anfragen dieser IP an diesen Endpoint seit T".
+CREATE INDEX IF NOT EXISTS rate_limit_events_lookup_idx
+  ON rate_limit_events (endpoint, ip, created_at);
+
+-- ----------------------------------------------------------------------------
+-- Row Level Security
+--
+-- Supabase veröffentlicht jede Tabelle in `public` über seine REST-API, und
+-- der `anon`-Key ist dort bewusst nicht geheim. Diese App nutzt die REST-API
+-- nicht, sie spricht über `pg` als Tabellenbesitzer — und der Besitzer ist
+-- von RLS ausgenommen. RLS ohne Policies sperrt also nur die REST-API aus,
+-- die App merkt nichts. Ohne diese Zeilen könnte jeder mit dem anon-Key
+-- Dokumente lesen, Chunks ändern oder das Rate-Limit leeren.
+-- ENABLE ist idempotent; ein zweiter Lauf ändert nichts.
+-- ----------------------------------------------------------------------------
+ALTER TABLE notebooks         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chunks            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rate_limit_events ENABLE ROW LEVEL SECURITY;
 
 -- ----------------------------------------------------------------------------
 -- Hinweise für den Betrieb

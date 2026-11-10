@@ -4,9 +4,11 @@ import { POST as ingestPost } from "@/app/api/ingest/route";
 
 /**
  * Diese Tests prüfen die Verträge der Routen, nicht die Fachlogik: Eingaben
- * werden validiert, bevor irgendetwas Teures passiert. In Schritt 1 antworten
- * die Handler mit 501 — genau das wird hier festgehalten, damit Schritt 2
- * diesen Test bewusst umschreiben muss, statt still etwas anderes zu tun.
+ * werden validiert, bevor irgendetwas Teures passiert. Chat antwortet bis
+ * Schritt 3 mit 501 — das ist hier festgehalten, damit Schritt 3 den Test
+ * bewusst umschreiben muss. Der Ingest-501-Test aus Schritt 1 ist in
+ * Schritt 2 durch tests/unit/ingest.test.ts ersetzt (echte Pipeline gegen
+ * PGlite); hier bleibt nur die Prüfung, die keine Datenbank braucht.
  */
 
 function jsonRequest(url: string, body: unknown): Request {
@@ -69,19 +71,5 @@ describe("POST /api/ingest", () => {
       new Request("http://localhost/api/ingest", { method: "POST" }),
     );
     expect(response.status).toBe(400);
-  });
-
-  it("meldet in Schritt 1 ehrlich, dass Ingestion noch fehlt", async () => {
-    const form = new FormData();
-    form.append(
-      "file",
-      new File([new Uint8Array([37, 80, 68, 70])], "test.pdf", {
-        type: "application/pdf",
-      }),
-    );
-    const response = await ingestPost(
-      new Request("http://localhost/api/ingest", { method: "POST", body: form }),
-    );
-    expect(response.status).toBe(501);
   });
 });

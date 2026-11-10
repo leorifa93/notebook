@@ -73,8 +73,11 @@ interface CandidateRow {
  * Zwei getrennte Queries wären einfacher zu lesen, aber dann müsste die
  * Fusion in TypeScript passieren. Ein CTE mit `FULL OUTER JOIN` auf die
  * Chunk-ID macht genau das, was RRF beschreibt, in einem Round-Trip.
+ *
+ * Exportiert, damit tests/unit/ingest.test.ts genau dieses SQL gegen PGlite
+ * ausführt, statt eine Kopie zu prüfen.
  */
-const HYBRID_SQL = `
+export const HYBRID_SQL = `
 WITH text_query AS (
   -- ODER-verknüpfte tsquery, siehe Kommentar oben. Absichtlich inline statt
   -- als JS-Interpolation: so lässt sich HYBRID_SQL unverändert in psql

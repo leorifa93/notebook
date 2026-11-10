@@ -28,6 +28,13 @@ export function getPool(): Pool {
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
     });
+    // Ein Pooler oder Supabase trennt ruhende Verbindungen irgendwann. `pg`
+    // meldet das als 'error' am Pool; ohne Listener wird daraus eine
+    // uncaughtException, die die ganze Instanz reißen kann. Der Pool ersetzt
+    // die Verbindung beim nächsten Query selbst, hier wird nur protokolliert.
+    pool.on("error", (error) => {
+      console.error("[db] idle client error", { error: error.message });
+    });
   }
   return pool;
 }
@@ -74,8 +81,6 @@ export async function queryOne<T extends QueryResultRow>(
  * Der Ingest schreibt erst das Dokument, dann alle Chunks. Bricht das
  * Chunk-Insert ab, darf kein Dokument ohne Chunks zurückbleiben — sonst
  * erscheint es als Quelle, die nichts beantworten kann.
- *
- * TODO(Schritt 2): In app/api/ingest/route.ts verwenden.
  */
 export async function withTransaction<T>(
   fn: (client: PoolClient) => Promise<T>,
@@ -92,6 +97,41 @@ export async function withTransaction<T>(
   } finally {
     client.release();
   }
+}
+
+/**
+ * Schmaler Query-Executor für die Schreib- und Listenfunktionen.
+ *
+ * Produktion verdrahtet `getDatabase()` (pg gegen den Supabase-Pooler), die
+ * Tests eine PGlite-Instanz, die dieselbe Form hat. So laufen Insert,
+ * Transaktion und Cascade in der CI gegen echtes Postgres, ohne dass Code
+ * außerhalb dieser Datei `pg` kennt.
+ */
+export interface Queryable {
+  query<T extends QueryResultRow>(
+    text: string,
+    params?: unknown[],
+  ): Promise<{ rows: T[] }>;
+}
+
+export interface Database extends Queryable {
+  /** Commit bei Erfolg, Rollback bei jedem Fehler in `fn`. */
+  transaction<T>(fn: (tx: Queryable) => Promise<T>): Promise<T>;
+}
+
+/** Produktionsdatenbank; der Pool entsteht erst beim ersten Query. */
+export function getDatabase(): Database {
+  return {
+    query: <T extends QueryResultRow>(text: string, params: unknown[] = []) =>
+      query<T>(text, params),
+    transaction: <T>(fn: (tx: Queryable) => Promise<T>) =>
+      withTransaction((client) =>
+        fn({
+          query: <R extends QueryResultRow>(text: string, params: unknown[] = []) =>
+            client.query<R>(text, params),
+        }),
+      ),
+  };
 }
 
 /** Für Health-Checks und Skripte; schließt den Pool sauber. */

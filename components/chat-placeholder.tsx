@@ -1,13 +1,16 @@
-import { ArrowUp, Sparkles } from "lucide-react";
+"use client";
+
+import { ArrowUp, Library, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
 /**
  * Rechte Spalte: Chat.
  *
- * Schritt 1 rendert den leeren Zustand mit drei Beispiel-Fragen und einem
- * deaktivierten Composer. Der echte Verlauf kommt in Schritt 3 über
- * POST /api/chat (streaming, siehe app/api/chat/route.ts).
+ * Bis Schritt 3 der leere Zustand mit drei Beispiel-Fragen und einem
+ * deaktivierten Composer. Der echte Verlauf kommt über POST /api/chat
+ * (streaming, siehe app/api/chat/route.ts). Schon jetzt sichtbar: wie viele
+ * Quellen ausgewählt sind, und auf schmalen Fenstern der Weg zur Sidebar.
  */
 const EXAMPLE_QUESTIONS = [
   "Was ist die Kernaussage von Seite 3?",
@@ -15,7 +18,13 @@ const EXAMPLE_QUESTIONS = [
   "Fasse die wichtigsten Punkte in fünf Sätzen zusammen.",
 ];
 
-export function ChatPlaceholder() {
+interface ChatPlaceholderProps {
+  selectedCount: number;
+  totalCount: number;
+  onOpenSources: () => void;
+}
+
+export function ChatPlaceholder({ selectedCount, totalCount, onOpenSources }: ChatPlaceholderProps) {
   return (
     <section className="flex h-full min-w-0 flex-1 flex-col">
       <header className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -25,9 +34,17 @@ export function ChatPlaceholder() {
             Jede Aussage wird mit Quelle und Seite belegt.
           </p>
         </div>
-        <span className="hidden text-xs text-muted-foreground sm:block">
-          0 Nachrichten
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-xs text-muted-foreground sm:block">
+            {totalCount === 0
+              ? "Keine Quellen"
+              : `${selectedCount} von ${totalCount} Quellen ausgewählt`}
+          </span>
+          <Button variant="outline" size="sm" className="md:hidden" onClick={onOpenSources}>
+            <Library className="h-3.5 w-3.5" aria-hidden="true" />
+            Quellen ({totalCount})
+          </Button>
+        </div>
       </header>
 
       <div className="flex flex-1 items-center justify-center overflow-y-auto px-6 py-10 scrollbar-slim">
@@ -57,7 +74,7 @@ export function ChatPlaceholder() {
             ))}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Beispielfragen – aktiv, sobald Quellen vorhanden sind.
+            Beispielfragen – aktiv, sobald der Chat steht (Schritt 3).
           </p>
         </div>
       </div>
@@ -67,7 +84,9 @@ export function ChatPlaceholder() {
           <textarea
             rows={1}
             disabled
-            placeholder="Quellen zuerst hinzufügen …"
+            placeholder={
+              totalCount === 0 ? "Quellen zuerst hinzufügen …" : "Chat folgt in Schritt 3 …"
+            }
             className="max-h-40 flex-1 resize-none bg-transparent px-2 py-2 text-sm placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed"
           />
           <Button size="icon" disabled aria-label="Frage senden">
