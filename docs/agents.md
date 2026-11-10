@@ -119,3 +119,99 @@ Stand ehrlich beschreibt.
 Die Commit-Reihenfolge folgt den Schritten, nicht den Dateien: erst Projekt und
 Werkzeuge, dann Grundgerüst der Oberfläche, dann Datenmodell, dann die Logik in
 der Reihenfolge, in der die Pipeline sie aufruft, zuletzt API und Doku.
+
+## So laufen die Rollen in Cursor
+
+Die Rollendateien liegen unter `.cursor/rules/` als `.mdc`-Dateien. Sie gelten
+nicht automatisch in jedem Chat (`alwaysApply: false`), sondern werden bewusst
+per `@` eingeblendet — etwa `@architekt` oder `@reviewer`. So bleibt jede Rolle
+ein eigener Durchgang mit festem Kontext. Die Agenten diskutieren nicht
+untereinander; ein Reviewer erbt nicht den Implementierungs-Chat.
+
+Die verbindlichen Projektregeln stehen in `AGENTS.md` und gelten unabhängig von
+der Rolle. Deshalb gibt es keine zusätzliche, immer aktive Projektregel, die
+denselben Text wiederholen würde.
+
+### Ablauf pro Schritt
+
+```mermaid
+flowchart TD
+  A[Neuer Chat: @architekt plant] --> B[Leonardo gibt den Plan frei]
+  B --> C[Neuer Chat: @umsetzer baut]
+  C --> D[Frischer Chat: @reviewer prüft nur Plan und Diff]
+  D -->|Befund| C
+  D -->|sauber| E[@designer prüft die Oberfläche]
+  E --> F[Neuer Chat: @tester führt Tests und die vier Checks aus]
+  F --> G[@redakteur aktualisiert die Doku]
+  G --> H[Leonardo nimmt im Pull Request ab]
+```
+
+1. Neuer Chat, `@architekt` und die Schritt-Nummer. Ergebnis:
+   `docs/schritt-N-plan.md`.
+2. Leonardo liest den Plan und gibt ihn frei — oder schickt ihn zurück.
+3. Neuer Chat, `@umsetzer` plus den freigegebenen Plan. Bauen und in kleinen
+   Commits festhalten.
+4. **Frischer** Chat, `@reviewer`, nur Plan und Diff. Protokoll nach
+   `docs/review-schritt-N.md`. Bei Funden zurück zum Umsetzer, wieder in einem
+   eigenen Chat.
+5. `@designer` prüft Hierarchie, Zustände und Belege auf schmalem und breitem
+   Fenster.
+6. Neuer Chat, `@tester`: Tests schreiben oder prüfen, danach `typecheck`,
+   `lint`, `test` und `build` wirklich ausführen.
+7. `@redakteur` zieht README und `docs/` auf den ehrlichen Stand.
+8. Leonardo nimmt im Pull Request ab. Keine Rolle merged, deployt oder ändert
+   den Systemprompt in `lib/prompt.ts` ohne seine Freigabe. `@abnahme` darf nur
+   die Prüfliste vorbereiten, nie selbst für abgenommen erklären.
+
+### Beispiel-Prompts
+
+**Architekt**
+
+```
+@architekt Plane Schritt 2 (Ingest) gemäß AGENTS.md und dem README.
+Schreib den Plan nach docs/schritt-2-plan.md. Noch nicht umsetzen.
+```
+
+**Umsetzer**
+
+```
+@umsetzer Setze den freigegebenen Plan in docs/schritt-2-plan.md um.
+Kleine, sprechende Commits. Nicht mergen, nicht deployen.
+```
+
+**Reviewer**
+
+```
+@reviewer Dies ist ein frischer Chat. Du bekommst nur den Plan
+docs/schritt-2-plan.md und den Diff dieses Branches gegen die Basis.
+Prüfe gegen AGENTS.md. Jeden Fund mit Datei, Zeile und Schweregrad
+nach docs/review-schritt-2.md schreiben. Keinen Code ändern.
+```
+
+**Designer**
+
+```
+@designer Prüfe die Oberfläche auf Zustände (leer, lädt, Fehler, Erfolg),
+Belegkarten und Lesbarkeit auf schmalem und breitem Fenster.
+```
+
+**Tester**
+
+```
+@tester Prüfe und ergänze die Tests zu diesem Schritt. Führe
+npm run typecheck, lint, test und build aus und halte das Ergebnis fest.
+```
+
+**Redakteur**
+
+```
+@redakteur Aktualisiere README und docs/ auf den ehrlichen Stand dieses
+Schritts. Nichts als fertig darstellen, was noch fehlt.
+```
+
+**Abnahme (nur Prüfliste, kein Merge)**
+
+```
+@abnahme Bereite die Abnahme-Prüfliste vor: Review-Protokoll, CI, Doku,
+offene Blocker. Nicht mergen, nicht für abgenommen erklären.
+```
