@@ -1,3 +1,5 @@
+import { NextResponse } from "next/server";
+
 import type { Queryable } from "@/lib/db";
 
 /**
@@ -106,4 +108,19 @@ export function clientIp(request: Request): string {
   const first = forwarded?.split(",")[0]?.trim();
   if (first) return first;
   return request.headers.get("x-real-ip")?.trim() || "unbekannt";
+}
+
+/**
+ * 429 mit Minutenangabe und `Retry-After`, gleich für Upload, Chat und
+ * Zusammenfassung (S5 aus docs/review-schritt-3.md: vorher in jedem Handler
+ * einzeln ausformuliert). `what` ist das Wort im Satz, etwa „Fragen“.
+ */
+export function tooManyRequests(what: string, retryAfterSeconds: number): NextResponse {
+  const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+  return NextResponse.json(
+    {
+      error: `Zu viele ${what} in kurzer Zeit. Bitte versuche es in ${minutes} ${minutes === 1 ? "Minute" : "Minuten"} erneut.`,
+    },
+    { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } },
+  );
 }
