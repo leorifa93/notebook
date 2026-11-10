@@ -64,6 +64,14 @@ describe("retrieve()", () => {
     expect(embed).not.toHaveBeenCalled();
   });
 
+  it("kennt die beste Ähnlichkeit aller Kandidaten, auch bei kleinem Limit", async () => {
+    const question = "Wie hoch ist die Kaution insgesamt?";
+    const wide = await retrieve(question, [vertragId, notizId], deps, { limit: 40 });
+    const best = Math.max(...wide.map((chunk) => chunk.vectorSimilarity ?? 0));
+    const [only] = await retrieve(question, [vertragId, notizId], deps, { limit: 1 });
+    expect(only?.bestVectorSimilarity).toBeCloseTo(best, 6);
+  });
+
   it("liefert für eine Frage ohne gemeinsame Wörter nur geringe Ähnlichkeit", async () => {
     const chunks = await retrieve("Quantenchromodynamik Gluonen", [vertragId], deps);
     const best = Math.max(0, ...chunks.map((chunk) => chunk.vectorSimilarity ?? 0));

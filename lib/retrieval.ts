@@ -30,6 +30,13 @@ export interface RetrievedChunk {
    * deshalb als Schwelle für die Absage im Chat.
    */
   vectorSimilarity: number | null;
+  /**
+   * Beste Ähnlichkeit unter *allen* Vektorkandidaten, nicht nur den
+   * zurückgegebenen. RRF kann den besten Vektortreffer aus den Top-K
+   * drängen, wenn andere Chunks in beiden Listen mittelmäßig ranken; die
+   * Absage soll trotzdem wissen, dass es einen passenden Chunk gibt.
+   */
+  bestVectorSimilarity: number | null;
 }
 
 export interface RetrievalOptions {
@@ -63,6 +70,7 @@ interface CandidateRow {
   vector_rank: number | string | null;
   text_rank: number | string | null;
   vector_similarity: number | string | null;
+  best_vector_similarity: number | string | null;
   rrf_score: number | string;
 }
 
@@ -145,6 +153,8 @@ SELECT
   f.vector_rank           AS vector_rank,
   f.text_rank             AS text_rank,
   f.vector_similarity     AS vector_similarity,
+  -- Fensterfunktion läuft vor LIMIT, sieht also alle Kandidaten.
+  max(f.vector_similarity) OVER () AS best_vector_similarity,
   f.rrf_score             AS rrf_score
 FROM fused f
 JOIN chunks c ON c.id = f.chunk_id
@@ -196,6 +206,8 @@ export async function retrieve(
     vectorRank: row.vector_rank === null ? null : Number(row.vector_rank),
     textRank: row.text_rank === null ? null : Number(row.text_rank),
     vectorSimilarity: row.vector_similarity === null ? null : Number(row.vector_similarity),
+    bestVectorSimilarity:
+      row.best_vector_similarity === null ? null : Number(row.best_vector_similarity),
   }));
 }
 

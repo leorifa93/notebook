@@ -176,12 +176,19 @@ describe("shouldRefuse", () => {
     score: 0.03,
     vectorRank: 1,
     textRank: null,
+    bestVectorSimilarity: null,
   };
 
   it("lehnt ab bei leerer Liste, knapp unter der Schwelle und bei reinen Volltexttreffern", () => {
     expect(shouldRefuse([])).toBe(true);
     expect(shouldRefuse([{ ...base, vectorSimilarity: MIN_SIMILARITY - 0.001 }])).toBe(true);
     expect(shouldRefuse([{ ...base, vectorSimilarity: null, textRank: 1 }])).toBe(true);
+  });
+
+  it("zählt den besten Vektorkandidaten, auch wenn RRF ihn aus den Top-K gedrängt hat", () => {
+    expect(
+      shouldRefuse([{ ...base, vectorSimilarity: 0.1, bestVectorSimilarity: 0.4 }]),
+    ).toBe(false);
   });
 
   it("lässt durch, sobald ein Treffer die Schwelle erreicht", () => {

@@ -46,10 +46,14 @@ export const MIN_SIMILARITY = 0.25;
  * Stufe 1 der Absage. Der RRF-Score taugt dafür nicht: Er addiert nur
  * Ränge und hat immer einen „besten“ Treffer. Reine Volltexttreffer
  * (`vectorSimilarity = null`) zählen als 0, weil eine ODER-Suche schon über
- * ein Füllwort trifft.
+ * ein Füllwort trifft. Maßgeblich ist der beste Vektorkandidat insgesamt,
+ * auch wenn RRF ihn aus den Top-K gedrängt hat.
  */
 export function shouldRefuse(chunks: readonly RetrievedChunk[]): boolean {
-  const best = Math.max(0, ...chunks.map((chunk) => chunk.vectorSimilarity ?? 0));
+  const best = Math.max(
+    0,
+    ...chunks.map((chunk) => Math.max(chunk.bestVectorSimilarity ?? 0, chunk.vectorSimilarity ?? 0)),
+  );
   return best < MIN_SIMILARITY;
 }
 

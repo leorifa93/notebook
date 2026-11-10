@@ -24,6 +24,7 @@ function chunk(overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
     vectorRank: 1,
     textRank: 2,
     vectorSimilarity: 0.6,
+    bestVectorSimilarity: 0.6,
     ...overrides,
   };
 }
