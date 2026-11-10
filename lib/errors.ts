@@ -35,6 +35,11 @@ export function classifyUpstreamError(error: unknown): UpstreamErrorKind {
   return "transient";
 }
 
+/** Fehler aus einem Aufruf bei OpenAI (direkt oder nach Retries). */
+export function isUpstreamApiError(error: unknown): boolean {
+  return APICallError.isInstance(error) || RetryError.isInstance(error);
+}
+
 /** Meldung für die Fälle, in denen Warten nicht hilft; sonst `null`. */
 export function permanentErrorMessage(kind: UpstreamErrorKind): string | null {
   if (kind === "config") return CONFIG_ERROR_MESSAGE;

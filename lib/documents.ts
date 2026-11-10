@@ -280,6 +280,25 @@ export async function getDocumentFile(
   };
 }
 
+/**
+ * Schneidet angefragte Dokument-IDs mit den Dokumenten des Notebooks.
+ * Gelöschte oder fremde IDs fallen heraus, statt die Suche zu erweitern.
+ * Die IDs müssen vorher mit `isUuid` geprüft sein.
+ */
+export async function existingDocumentIds(
+  db: Queryable,
+  notebookId: string,
+  documentIds: readonly string[],
+): Promise<string[]> {
+  if (documentIds.length === 0) return [];
+  const { rows } = await db.query<{ id: string }>(
+    `SELECT id::text AS id FROM documents
+     WHERE notebook_id = $1 AND id = ANY($2::uuid[])`,
+    [notebookId, [...documentIds]],
+  );
+  return rows.map((row) => row.id);
+}
+
 /** Vorab prüfen, sonst wirft Postgres bei `$1::uuid` einen 500er statt 400. */
 export function isUuid(value: string): boolean {
   return UUID_PATTERN.test(value);
