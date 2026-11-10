@@ -5,7 +5,11 @@ import type { QueryResultRow } from "pg";
 import { handleDeleteDocument, handleListDocuments } from "@/app/api/documents/handler";
 import { handleIngest } from "@/app/api/ingest/handler";
 import type { Database, Queryable } from "@/lib/db";
-import type { DocumentSummary } from "@/lib/documents";
+import {
+  DuplicateDocumentError,
+  insertDocumentWithChunks,
+  type DocumentSummary,
+} from "@/lib/documents";
 import { toSqlVector } from "@/lib/embeddings";
 import type { IngestDeps } from "@/lib/ingest";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
@@ -206,6 +210,54 @@ describe("POST /api/ingest: Ablehnungen ohne Zeile in documents", () => {
       }),
       502,
     );
+  });
+});
+
+describe("Doppelter Upload", () => {
+  it("lehnt dieselbe Datei im selben Notebook mit 409 ab, ohne erneut einzubetten", async () => {
+    expect((await uploadMietvertrag()).status).toBe(201);
+    let embedCalls = 0;
+    const second = await uploadMietvertrag({
+      db,
+      embed: async (texts) => {
+        embedCalls += 1;
+        return stubEmbed(texts);
+      },
+    });
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as { error?: string };
+    expect(body.error).toContain("muster-mietvertrag");
+    expect(embedCalls).toBe(0);
+    expect(await count("documents")).toBe(1);
+  });
+
+  it("nimmt eine Datei mit anderem Namen, aber gleichem Inhalt nicht doppelt an", async () => {
+    await handleIngest(uploadRequest(fileFrom("Gleicher Text.", "a.txt", "text/plain")), deps);
+    const response = await handleIngest(
+      uploadRequest(fileFrom("Gleicher Text.", "b.txt", "text/plain")),
+      deps,
+    );
+    expect(response.status).toBe(409);
+  });
+
+  it("fängt den Wettlauf zweier gleichzeitiger Uploads über den eindeutigen Index ab", async () => {
+    // Simuliert den Fall, dass beide Vorabprüfungen „frei" sahen: Das zweite
+    // Insert mit gleichem Hash muss am Index scheitern, nicht still durchgehen.
+    const document = {
+      notebookId: DEFAULT_NOTEBOOK_ID,
+      title: "x",
+      sourceType: "text" as const,
+      mimeType: "text/plain",
+      pageCount: 0,
+      fileBytes: new Uint8Array([1]),
+      contentSha256: "a".repeat(64),
+    };
+    const chunk = { page: null, chunkIndex: 0, content: "x", tokenCount: 1, contextHeader: "x" };
+    await insertDocumentWithChunks(db, document, [chunk], [stubEmbedding("x")]);
+    await expect(
+      insertDocumentWithChunks(db, document, [chunk], [stubEmbedding("x")]),
+    ).rejects.toBeInstanceOf(DuplicateDocumentError);
+    expect(await count("documents")).toBe(1);
   });
 });
 

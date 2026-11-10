@@ -18,6 +18,24 @@ export interface NewDocument {
   mimeType: string;
   pageCount: number;
   fileBytes: Uint8Array;
+  contentSha256: string;
+}
+
+/** Der eindeutige Index auf (notebook_id, content_sha256) hat gegriffen. */
+export class DuplicateDocumentError extends Error {
+  constructor() {
+    super("Dokument mit gleichem Inhalt existiert bereits in diesem Notebook.");
+    this.name = "DuplicateDocumentError";
+  }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "23505"
+  );
 }
 
 export interface StoredDocument {
@@ -50,23 +68,43 @@ export async function insertDocumentWithChunks(
     );
   }
 
-  return db.transaction(async (tx) => {
-    const id = await insertDocumentRow(tx, document);
-    await insertChunkRows(tx, id, chunks, embeddings);
-    return {
-      id,
-      title: document.title,
-      sourceType: document.sourceType,
-      pageCount: document.pageCount,
-      chunkCount: chunks.length,
-    };
-  });
+  try {
+    return await db.transaction(async (tx) => {
+      const id = await insertDocumentRow(tx, document);
+      await insertChunkRows(tx, id, chunks, embeddings);
+      return {
+        id,
+        title: document.title,
+        sourceType: document.sourceType,
+        pageCount: document.pageCount,
+        chunkCount: chunks.length,
+      };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) throw new DuplicateDocumentError();
+    throw error;
+  }
+}
+
+/** Gleiche Datei im selben Notebook, falls vorhanden. */
+export async function findDocumentByHash(
+  db: Queryable,
+  notebookId: string,
+  contentSha256: string,
+): Promise<{ id: string; title: string } | null> {
+  const { rows } = await db.query<{ id: string; title: string }>(
+    `SELECT id::text AS id, title FROM documents
+     WHERE notebook_id = $1 AND content_sha256 = $2`,
+    [notebookId, contentSha256],
+  );
+  return rows[0] ?? null;
 }
 
 async function insertDocumentRow(tx: Queryable, document: NewDocument): Promise<string> {
   const { rows } = await tx.query<{ id: string }>(
-    `INSERT INTO documents (notebook_id, title, source_type, page_count, mime_type, file_bytes)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO documents
+       (notebook_id, title, source_type, page_count, mime_type, file_bytes, content_sha256)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id::text AS id`,
     [
       document.notebookId,
@@ -75,6 +113,7 @@ async function insertDocumentRow(tx: Queryable, document: NewDocument): Promise<
       document.pageCount,
       document.mimeType,
       document.fileBytes,
+      document.contentSha256,
     ],
   );
   const row = rows[0];

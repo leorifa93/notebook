@@ -65,6 +65,12 @@ ALTER TABLE documents ADD COLUMN IF NOT EXISTS mime_type  text;
 COMMENT ON COLUMN documents.file_bytes IS
   'Originaldatei, geschrieben in derselben Transaktion wie die Chunks.';
 
+-- SHA-256 der Originaldatei. Dieselbe Datei zweimal im selben Notebook ergäbe
+-- doppelte Chunks: Die Suche lieferte jeden Treffer zweimal, und die Top-5
+-- im Chat bestünden zur Hälfte aus Duplikaten. Nullable für Zeilen aus der
+-- Zeit vor dieser Spalte; der eindeutige Index steht unten bei den Indexen.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS content_sha256 text;
+
 -- Jede Quelle gehört genau einem Notebook. Der DEFAULT hängt Dokumente, die
 -- vor Schritt 2 angelegt wurden, beim erneuten Ausführen an „Demo"; der
 -- Ingest setzt die Spalte trotzdem immer explizit. CASCADE: ein gelöschtes
@@ -174,6 +180,13 @@ CREATE INDEX IF NOT EXISTS chunks_document_page_idx
 -- Übersicht in der Seitenleiste, neueste zuerst.
 CREATE INDEX IF NOT EXISTS documents_created_at_idx
   ON documents (created_at DESC);
+
+-- Kein doppelter Upload pro Notebook, auch nicht bei zwei gleichzeitigen
+-- Requests: Der Ingest prüft vorher (spart Embeddings), dieser Index ist das
+-- Sicherheitsnetz, wenn beide Prüfungen gleichzeitig „frei" sehen.
+CREATE UNIQUE INDEX IF NOT EXISTS documents_notebook_sha256_key
+  ON documents (notebook_id, content_sha256)
+  WHERE content_sha256 IS NOT NULL;
 
 -- Quellenliste eines Notebooks, neueste zuerst; deckt auch den FK für CASCADE.
 CREATE INDEX IF NOT EXISTS documents_notebook_created_idx

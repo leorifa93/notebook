@@ -1,6 +1,13 @@
+import { createHash } from "node:crypto";
+
 import { chunkPages, type Chunk, type SourcePage } from "@/lib/chunk";
 import type { Database } from "@/lib/db";
-import { insertDocumentWithChunks, type StoredDocument } from "@/lib/documents";
+import {
+  DuplicateDocumentError,
+  findDocumentByHash,
+  insertDocumentWithChunks,
+  type StoredDocument,
+} from "@/lib/documents";
 import { MAX_FILE_BYTES, MAX_PDF_PAGES, formatMegabytes } from "@/lib/limits";
 import {
   PdfPageLimitError,
@@ -24,7 +31,7 @@ export type SourceType = "pdf" | "text" | "markdown";
 /** Fehler, die der Nutzer sehen soll: deutscher Text, passender Status. */
 export class IngestError extends Error {
   constructor(
-    readonly status: 400 | 413 | 415 | 422 | 429 | 502,
+    readonly status: 400 | 409 | 413 | 415 | 422 | 429 | 502,
     message: string,
   ) {
     super(message);
@@ -48,6 +55,8 @@ export interface ParsedUpload {
   mimeType: string;
   /** Originalbytes, unverändert; landen als `documents.file_bytes`. */
   bytes: Uint8Array;
+  /** SHA-256 der Originalbytes, hex; erkennt doppelte Uploads. */
+  contentSha256: string;
   /** 0 bei Quellen ohne Seiten. */
   pageCount: number;
   pages: SourcePage[];
@@ -98,6 +107,7 @@ export async function readUpload(
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   const title = titleFromFileName(file.name);
+  const contentSha256 = createHash("sha256").update(bytes).digest("hex");
 
   if (detected === "pdf") {
     let parsed: ParsedPdf;
@@ -125,6 +135,7 @@ export async function readUpload(
       sourceType: "pdf",
       mimeType: mimeTypeFor("pdf"),
       bytes,
+      contentSha256,
       pageCount: parsed.pageCount,
       pages: parsed.pages,
     };
@@ -146,6 +157,7 @@ export async function readUpload(
     sourceType: detected,
     mimeType: mimeTypeFor(detected),
     bytes,
+    contentSha256,
     pageCount: 0,
     pages,
   };
@@ -177,6 +189,10 @@ export async function ingestUpload(
   notebookId: string,
   deps: IngestDeps,
 ): Promise<StoredDocument> {
+  // Vor den Embeddings: ein Duplikat soll nichts kosten.
+  const existing = await findDocumentByHash(deps.db, notebookId, upload.contentSha256);
+  if (existing) throw duplicateError(existing.title);
+
   const chunks = chunkPages(upload.pages, upload.title);
   if (chunks.length === 0) {
     throw new IngestError(422, "Die Datei enthält keinen Text.");
@@ -197,17 +213,32 @@ export async function ingestUpload(
     );
   }
 
-  return insertDocumentWithChunks(
-    deps.db,
-    {
-      notebookId,
-      title: upload.title,
-      sourceType: upload.sourceType,
-      mimeType: upload.mimeType,
-      pageCount: upload.pageCount,
-      fileBytes: upload.bytes,
-    },
-    chunks,
-    embeddings,
+  try {
+    return await insertDocumentWithChunks(
+      deps.db,
+      {
+        notebookId,
+        title: upload.title,
+        sourceType: upload.sourceType,
+        mimeType: upload.mimeType,
+        pageCount: upload.pageCount,
+        fileBytes: upload.bytes,
+        contentSha256: upload.contentSha256,
+      },
+      chunks,
+      embeddings,
+    );
+  } catch (error) {
+    // Zwei gleichzeitige Uploads derselben Datei: Die Vorabprüfung sah bei
+    // beiden „frei", der eindeutige Index lässt nur einen durch.
+    if (error instanceof DuplicateDocumentError) throw duplicateError(upload.title);
+    throw error;
+  }
+}
+
+function duplicateError(existingTitle: string): IngestError {
+  return new IngestError(
+    409,
+    `Diese Datei ist in diesem Notebook schon vorhanden („${existingTitle}“).`,
   );
 }
