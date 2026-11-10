@@ -16,6 +16,11 @@ Den freigegebenen Plan in Code bringen, ein Commit pro abgeschlossener
 Teilaufgabe. Offene Punkte schriftlich nennen, nicht stillschweigend
 umgehen.
 
+Vor jedem Commit `@tester` (passender Test vorhanden, rot-grün
+nachvollziehbar) und `@reviewer` (Checkliste auf den gestagten Diff)
+aufrufen. Befunde vor dem Commit beheben. `--no-verify` ist verboten;
+der Pre-commit-Hook führt `typecheck`, `lint` und `test` aus.
+
 ## Eingabe
 
 - der freigegebene Plan `docs/schritt-N-plan.md`
@@ -61,5 +66,6 @@ Nicht selbst uminterpretieren, nicht „schnell“ ein Nicht-Ziel bauen.
 - [ ] Server-Code nur in `app/api/**` und `lib/`; keine Secrets in
       `NEXT_PUBLIC_*`.
 - [ ] Deutsche UI-Texte, englische Bezeichner, kein `console.log`.
-- [ ] `npm run typecheck`, `lint`, `test` und `build` sind grün.
+- [ ] Vor dem Commit: `@tester` und `@reviewer` auf den gestagten Diff,
+      Befunde behoben, Hook grün, kein `--no-verify`.
 - [ ] Kein `.env`-Inhalt im Diff.
