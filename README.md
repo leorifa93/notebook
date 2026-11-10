@@ -59,6 +59,7 @@ Der Weg in Worten:
 | Pfad | Zweck |
 | --- | --- |
 | `db/schema.sql` | Tabellen, pgvector, HNSW- und GIN-Index, Cascade |
+| `db/migrations/` | Nachträge für bestehende Datenbanken (SQL-Editor) |
 | `lib/db.ts` | einziger Ort mit `pg`; Pool, `query()`, Transaktionen |
 | `lib/pdf.ts` | seitenweises Parsing, Scan-Erkennung |
 | `lib/chunk.ts` | Chunking mit Überlappung, Token-Schätzung |
@@ -69,10 +70,12 @@ Der Weg in Worten:
 | `lib/ingest.ts` | Upload prüfen, lesen, zerlegen, einbetten, speichern |
 | `lib/documents.ts` | Dokumente schreiben (eine Transaktion), listen, löschen |
 | `lib/rate-limit.ts` | Rate-Limit pro IP, gezählt in Postgres |
+| `lib/summary.ts`, `lib/summary-store.ts` | Zusammenfassung: Auswahl der Chunks, Prüfung, Cache pro Quellenstand |
 | `lib/limits.ts` | Upload-Grenzen, geteilt von Server und Client |
 | `app/api/ingest/route.ts` | Upload-Endpoint |
 | `app/api/documents/` | Quellen listen (`GET`) und löschen (`DELETE /:id`) |
 | `app/api/chat/route.ts` | Chat-Endpoint (Gerüst, `501` bis Schritt 3) |
+| `app/api/summary/route.ts` | Zusammenfassung und drei Fragevorschläge (`GET` Cache, `POST` erzeugen) |
 | `components/workspace.tsx` | Client-Zustand: Quellen, Auswahl, Upload, Löschen |
 | `fixtures/` | eigene CC0-Testdokumente (Muster-Mietvertrag, Scan-Beispiel) |
 
@@ -192,6 +195,14 @@ Notebooks, Dateiinhalt, Duplikatschutz, Rate-Limit-Tabelle und RLS.
 
 Bequemster Weg: Inhalt von `db/schema.sql` im Supabase-Dashboard unter
 **SQL Editor** einfügen und ausführen.
+
+Läuft die Datenbank schon mit einem älteren Stand, reichen die einzelnen
+Nachträge unter `db/migrations/`, ebenfalls im SQL-Editor und mehrfach
+ausführbar:
+
+| Datei | Bringt | Ohne sie |
+| --- | --- | --- |
+| `db/migrations/2026-11-10-notebook-summaries.sql` | Tabelle `notebook_summaries` (Cache für Zusammenfassung und Fragevorschläge) | Der Überblick im leeren Chat meldet „nicht vollständig eingerichtet“ (503); Quellen und Chat laufen weiter |
 
 Alternativ über die direkte Verbindung (nicht den Pooler — PgBouncer
 versteht manche DDL-Statements nicht):
