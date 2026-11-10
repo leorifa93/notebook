@@ -39,3 +39,19 @@ describe("Notebook-Ebene", () => {
     expect(rows).toEqual([{ id: DEFAULT_NOTEBOOK_ID, title: DEFAULT_NOTEBOOK_TITLE }]);
   });
 });
+
+describe("Row Level Security", () => {
+  it("ist auf allen Tabellen aktiv, damit die Supabase-REST-API nichts sieht", async () => {
+    const { rows } = await db.query<{ relname: string; relrowsecurity: boolean }>(
+      `SELECT relname, relrowsecurity FROM pg_class
+       WHERE relname IN ('notebooks', 'documents', 'chunks', 'rate_limit_events')
+       ORDER BY relname`,
+    );
+    expect(rows).toEqual([
+      { relname: "chunks", relrowsecurity: true },
+      { relname: "documents", relrowsecurity: true },
+      { relname: "notebooks", relrowsecurity: true },
+      { relname: "rate_limit_events", relrowsecurity: true },
+    ]);
+  });
+});

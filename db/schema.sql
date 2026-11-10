@@ -184,6 +184,22 @@ CREATE INDEX IF NOT EXISTS rate_limit_events_lookup_idx
   ON rate_limit_events (endpoint, ip, created_at);
 
 -- ----------------------------------------------------------------------------
+-- Row Level Security
+--
+-- Supabase veröffentlicht jede Tabelle in `public` über seine REST-API, und
+-- der `anon`-Key ist dort bewusst nicht geheim. Diese App nutzt die REST-API
+-- nicht, sie spricht über `pg` als Tabellenbesitzer — und der Besitzer ist
+-- von RLS ausgenommen. RLS ohne Policies sperrt also nur die REST-API aus,
+-- die App merkt nichts. Ohne diese Zeilen könnte jeder mit dem anon-Key
+-- Dokumente lesen, Chunks ändern oder das Rate-Limit leeren.
+-- ENABLE ist idempotent; ein zweiter Lauf ändert nichts.
+-- ----------------------------------------------------------------------------
+ALTER TABLE notebooks         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chunks            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rate_limit_events ENABLE ROW LEVEL SECURITY;
+
+-- ----------------------------------------------------------------------------
 -- Hinweise für den Betrieb
 -- ----------------------------------------------------------------------------
 -- 1) Der HNSW-Index wird bei jedem Insert mitgeschrieben. Für den Bulk-Import
