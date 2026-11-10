@@ -76,6 +76,30 @@ export function buildCitations(chunks: readonly RetrievedChunk[]): Citation[] {
 }
 
 /**
+ * Titel landen in einem Attribut: Anführungszeichen und spitze Klammern
+ * würden das Attribut oder den Tag beenden. Der Titel kommt aus dem
+ * Dateinamen, also vom Nutzer.
+ */
+function escapeAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Text aus Dokument oder Frage darf keinen Quellenblock öffnen oder
+ * schließen. Sonst endet ein Block vorzeitig, und was danach steht, liest
+ * das Modell als eigene Anweisung oder als zusätzliche Quelle. Nur die
+ * Block-Tags werden entschärft, der übrige Text bleibt wörtlich, damit
+ * Zitate und Zahlen wie „< 5 %“ unverändert ankommen.
+ */
+export function neutralizeSourceTags(text: string): string {
+  return text.replace(/<(\s*\/?\s*quelle)/gi, "‹$1");
+}
+
+/**
  * Baut den User-Prompt: Quellenblöcke, dann die Frage.
  *
  * Jeder Block trägt seine Metadaten sichtbar im Kopf. Das Modell soll die
@@ -87,14 +111,14 @@ export function buildUserPrompt(
   chunks: readonly RetrievedChunk[],
 ): string {
   if (chunks.length === 0) {
-    return `Quellen:\n(keine Treffer)\n\nFrage: ${question}`;
+    return `Quellen:\n(keine Treffer)\n\nFrage: ${neutralizeSourceTags(question)}`;
   }
 
   const blocks = chunks.map((chunk, index) => {
     const page = chunk.page === null ? "ohne Seitenangabe" : `Seite ${chunk.page}`;
     return [
-      `<quelle nr="${index + 1}" dokument="${chunk.documentTitle}" ${page}>`,
-      truncate(chunk.content, 2400),
+      `<quelle nr="${index + 1}" dokument="${escapeAttribute(chunk.documentTitle)}" ${page}>`,
+      neutralizeSourceTags(truncate(chunk.content, 2400)),
       "</quelle>",
     ].join("\n");
   });
@@ -104,7 +128,7 @@ export function buildUserPrompt(
     "",
     blocks.join("\n\n"),
     "",
-    `Frage: ${question}`,
+    `Frage: ${neutralizeSourceTags(question)}`,
     "",
     "Antworte nur anhand dieser Quellen und belege jede Aussage mit [n].",
   ].join("\n");
