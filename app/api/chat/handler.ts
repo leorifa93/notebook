@@ -12,6 +12,7 @@ import {
   CHAT_TIMEOUT_MS,
   CHAT_TOP_K,
   MAX_QUESTION_CHARS,
+  MAX_SELECTED_SOURCES,
   shouldRefuse,
   type ChatRequest,
   type ChatUIMessage,
@@ -89,6 +90,7 @@ export function parseChatRequest(body: unknown): Parsed {
     // Ohne diese Prüfung landete "abc" im Cast `$3::uuid[]` und ergab 500.
     return badRequest(CHAT_MESSAGES.invalidSourceIds);
   }
+  if (rawIds.length > MAX_SELECTED_SOURCES) return badRequest(CHAT_MESSAGES.tooManySources);
 
   return { ok: true, value: { question, documentIds: [...new Set(rawIds)] } };
 }

@@ -13,6 +13,13 @@ import type { RetrievedChunk } from "@/lib/retrieval";
 /** Höchstlänge einer Frage in Zeichen. */
 export const MAX_QUESTION_CHARS = 2000;
 
+/**
+ * Höchstzahl ausgewählter Quellen pro Frage. Ohne Grenze landete ein
+ * beliebig langes ID-Array im `ANY($2::uuid[])`; 100 liegt weit über dem,
+ * was ein Demo-Notebook hat.
+ */
+export const MAX_SELECTED_SOURCES = 100;
+
 /** Wie viele Belege höchstens in den Prompt gehen (Eval misst Recall@5). */
 export const CHAT_TOP_K = 5;
 
@@ -68,6 +75,7 @@ export const CHAT_MESSAGES = {
   emptyQuestion: "Feld 'question' fehlt oder ist leer.",
   questionTooLong: `Die Frage ist zu lang (maximal ${MAX_QUESTION_CHARS} Zeichen).`,
   noSources: "Wähle mindestens eine Quelle aus, damit Notebook antworten kann.",
+  tooManySources: `Es können höchstens ${MAX_SELECTED_SOURCES} Quellen gleichzeitig ausgewählt sein.`,
   invalidSourceIds: "Die Quellenauswahl enthält eine ungültige ID. Bitte lade die Seite neu.",
   sourcesGone: "Die ausgewählten Quellen gibt es nicht mehr. Bitte lade die Seite neu.",
   searchFailed: "Die Quellen konnten gerade nicht durchsucht werden. Bitte versuche es erneut.",

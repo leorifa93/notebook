@@ -6,7 +6,7 @@ import { handleChat, type ChatDeps } from "@/app/api/chat/handler";
 import { handleIngest } from "@/app/api/ingest/handler";
 import type { Citation } from "@/lib/prompt";
 import { ConfigError } from "@/lib/env";
-import { MIN_SIMILARITY, shouldRefuse } from "@/lib/chat";
+import { MAX_SELECTED_SOURCES, MIN_SIMILARITY, shouldRefuse } from "@/lib/chat";
 import { REFUSAL_TEXT, SYSTEM_PROMPT } from "@/lib/prompt";
 import { CHAT_RATE_LIMIT } from "@/lib/rate-limit";
 import { retrieve } from "@/lib/retrieval";
@@ -216,6 +216,21 @@ describe("POST /api/chat: Ablehnungen vor jedem teuren Schritt", () => {
       depsWith(),
     );
     expect(response.status).toBe(400);
+  });
+
+  it("begrenzt die Zahl ausgewählter Quellen, bevor die Datenbank sie sieht", async () => {
+    const embed = vi.fn(stubEmbed);
+    const ids = Array.from(
+      { length: MAX_SELECTED_SOURCES + 1 },
+      (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    );
+    const response = await handleChat(
+      chatRequest({ question: KAUTION, documentIds: ids }),
+      depsWith({ embed }),
+    );
+    expect(response.status).toBe(400);
+    expect(await errorOf(response)).toContain("höchstens 100 Quellen");
+    expect(embed).not.toHaveBeenCalled();
   });
 
   it("meldet gelöschte oder fremde Quellen, statt die Suche zu erweitern", async () => {
