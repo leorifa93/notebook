@@ -45,3 +45,6 @@ coverage/
 /tmp/
 /uploads/
 *.dump
+
+# Eval-Rohdaten weiterer Läufe (eingecheckt ist nur eval/results/lauf-2026-11-10.json)
+/eval/results/lauf-*T*.json

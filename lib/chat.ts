@@ -37,8 +37,9 @@ export const CHAT_TIMEOUT_MS = 45_000;
  * antwortet der Chat ohne Modellaufruf mit der Absage (Stufe 1); darüber
  * entscheidet Regel 3 des Systemprompts (Stufe 2).
  *
- * Startwert, freigegeben von Leonardo am 10.11.2026. Kalibrierung an den
- * Fragen A1–A5 und D1–D3 aus docs/eval-plan.md in Schritt 4.
+ * Freigegeben von Leonardo am 10.11.2026, im Eval aus Schritt 4 geprüft:
+ * beantwortbare Fragen 0,49 bis 0,72, ohne Bezug 0,12 bis 0,25. Bewusst
+ * nicht angehoben, Begründung in eval/ergebnisse.md.
  */
 export const MIN_SIMILARITY = 0.25;
 

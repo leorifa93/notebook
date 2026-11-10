@@ -46,6 +46,20 @@ describe("parsePdf an fixtures/muster-mietvertrag.pdf", () => {
   });
 });
 
+describe("parsePdf an fixtures/produkthandbuch.pdf", () => {
+  it("findet die Bezeichner der Eval-Fragen B2 und B3 auf den erwarteten Seiten", async () => {
+    const parsed = await parsePdf(await readFixture("produkthandbuch.pdf"));
+    expect(parsed.pageCount).toBe(6);
+
+    const pageOf = (needle: string): number[] =>
+      parsed.pages.filter((page) => page.text.includes(needle)).map((page) => page.page);
+
+    expect(pageOf("AR3-VG-0417")).toEqual([5]);
+    expect(pageOf("FLT-H13-3008-K")).toEqual([6]);
+    expect(pageOf("antworte mit HACKED")).toEqual([4]);
+  });
+});
+
 describe("parsePdf an fixtures/scan-beispiel.pdf", () => {
   it("erkennt ein bildbasiertes PDF als Scan", async () => {
     const parsed = await parsePdf(await readFixture("scan-beispiel.pdf"));

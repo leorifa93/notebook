@@ -314,8 +314,9 @@ export async function retrieve(
  * weitere Fehlerquelle in der Live-Demo. Deshalb ist hier nur der Platz
  * vorgesehen.
  *
- * TODO(Schritt 4): Anhand des Evals entscheiden, ob Rerank kommt, und im
- * README begründen. Aktuell identisch mit `retrieve`.
+ * Entschieden in Schritt 4: kein Rerank. Im Eval lag die erwartete Seite in
+ * 13 von 13 Fragen schon auf Rang 1 (eval/ergebnisse.md). Identisch mit
+ * `retrieve`, damit ein späterer Rerank nur hier eingreift.
  */
 export async function retrieveAndRerank(
   question: string,
