@@ -12,12 +12,16 @@ Wenn Notebook eine Zahl nennt, soll der Reviewer in zwei Klicks sehen, auf
 welcher Seite sie steht. Alles in diesem Repo ist um diese eine Eigenschaft
 herum gebaut.
 
-> **Stand:** Schritt 2 von 4 — Ingest mit Notebooks. Quellen (PDF, Markdown,
-> Text) lassen sich hochladen, landen vollständig mit Seitenzahlen und
-> Embeddings in Supabase und erscheinen in der Sidebar, wo man sie an- und
-> abwählen oder löschen kann. **Der Chat antwortet noch mit `501`**, er kommt
-> in Schritt 3. Was in welchem Schritt dazukommt, steht unter
-> [Nächste Schritte](#nächste-schritte).
+> **Stand:** Schritt 3 von 4 abgeschlossen: Chat mit Belegen. Quellen (PDF,
+> Markdown, Text) hochladen, Fragen an die angehakten Quellen stellen,
+> gestreamte Antworten mit klickbaren Belegen und Sprung auf die Seite im
+> Original, ehrliche Absage, wenn es nicht in den Quellen steht, dazu ein
+> belegter Überblick mit drei Fragevorschlägen. Noch offen ist Schritt 4:
+> Eval mit gemessener Trefferquote. Eine solche Zahl gibt es deshalb hier
+> noch nicht.
+>
+> **Live:** <https://notebook-coral-seven.vercel.app> (offene Demo ohne
+> Login, siehe [Bekannte Grenzen](#bekannte-grenzen)).
 
 ---
 
@@ -25,34 +29,57 @@ herum gebaut.
 
 ```mermaid
 flowchart LR
-  A[PDF-Upload] --> B[Parse<br/>seitenweise]
-  B --> C[Chunking<br/>500–800 Tokens<br/>15 % Überlappung]
-  C --> D[Embeddings<br/>text-embedding-3-small]
+  subgraph Upload
+    A[PDF / MD / TXT] --> B[Parse seitenweise<br/>Text bereinigen]
+    B --> C[Chunking<br/>500–800 Tokens<br/>15 % Überlappung]
+    C --> D[Embeddings<br/>text-embedding-3-small]
+  end
   D --> E[(Supabase<br/>Postgres + pgvector)]
 
-  F[Frage] --> G[Embedding<br/>der Frage]
-  G --> H[Hybrid-Suche<br/>Vektor + Volltext]
+  subgraph Chat
+    F[Frage + Auswahl] --> G[Embedding der Frage]
+    G --> H[Hybrid-Suche<br/>Vektor + Volltext]
+    H --> I[RRF-Fusion<br/>ohne Beinahe-Kopien]
+    I --> R{Ähnlichkeit<br/>≥ 0,25?}
+    R -- nein --> X[Absage ohne Modell]
+    R -- ja --> J[Prompt mit<br/>nummerierten Quellen]
+    J --> K[Stream: Belege,<br/>dann Text mit n]
+  end
   E --> H
-  H --> I[RRF-Fusion<br/>Top-K]
-  I --> J[Prompt<br/>mit Quellen]
-  J --> K[Antwort streamen<br/>+ Belege]
+
+  subgraph Überblick
+    S[Quellenstand<br/>SHA-256] --> T{Cache?}
+    T -- nein --> U[verteilte Chunks<br/>generateObject]
+    U --> V[(notebook_summaries)]
+  end
+  E --> S
 
   style E fill:#eee,stroke:#999
+  style V fill:#eee,stroke:#999
 ```
 
 Der Weg in Worten:
 
-1. **Parse** — `lib/pdf.ts` liest das PDF mit `unpdf` und gibt den Text
-   *je Seite* zurück. Seiten werden nie zusammengeführt.
-2. **Chunk** — `lib/chunk.ts` zerlegt jede Seite in Abschnitte von 500–800
-   Tokens mit ~15 % Überlappung. Chunks überschreiten keine Seitengrenze.
-3. **Embed** — `lib/embeddings.ts` erzeugt Vektoren (1536 Dimensionen).
-4. **Store** — `db/schema.sql`: `documents` + `chunks`, Embeddings als
-   `vector(1536)` mit HNSW-Index.
-5. **Retrieve** — `lib/retrieval.ts` sucht hybrid: Vektorsuche und deutsche
-   Volltextsuche, fusioniert per Reciprocal Rank Fusion.
-6. **Answer** — `lib/prompt.ts` baut den Prompt mit nummerierten Quellen; das
-   Modell muss jede Aussage mit `[n]` belegen.
+1. **Parse.** `lib/pdf.ts` liest das PDF mit `unpdf` *je Seite*, verwirft
+   doppelt gezeichneten Text (L2) und bereinigt ihn mit `lib/text.ts`
+   (Steuerzeichen, unsichtbare Zeichen, NFC).
+2. **Chunk.** `lib/chunk.ts` zerlegt jede Seite in Abschnitte von 500–800
+   Tokens mit ~15 % Überlappung. Kein Chunk überschreitet eine Seitengrenze,
+   keiner wird abgeschnitten.
+3. **Embed und Store.** `lib/embeddings.ts` erzeugt Vektoren mit 1536
+   Dimensionen. Dokument, Originaldatei und Chunks schreibt
+   `lib/documents.ts` in einer Transaktion (`db/schema.sql`, HNSW-Index).
+4. **Retrieve.** `lib/retrieval.ts` sucht hybrid: Vektorsuche und deutsche
+   Volltextsuche in *einer* SQL-Abfrage, fusioniert per Reciprocal Rank
+   Fusion. Fast gleiche Treffer desselben Dokuments fallen heraus.
+5. **Absage oder Antwort.** Liegt der beste Vektortreffer unter
+   `MIN_SIMILARITY`, kommt die Absage ohne Modellaufruf. Sonst baut
+   `lib/prompt.ts` den Prompt mit nummerierten Quellen, und das Modell
+   muss jede Aussage mit `[n]` belegen.
+6. **Stream.** `POST /api/chat` schickt zuerst die Belegliste und dann den
+   Text. Das UI macht aus `[n]` einen Knopf, der die Belegkarte öffnet.
+7. **Überblick.** `GET`/`POST /api/summary` fasst alle Quellen des Notebooks
+   belegt zusammen und schlägt drei Fragen vor, gecacht pro Quellenstand.
 
 **Wichtige Dateien**
 
@@ -61,11 +88,14 @@ Der Weg in Worten:
 | `db/schema.sql` | Tabellen, pgvector, HNSW- und GIN-Index, Cascade |
 | `db/migrations/` | Nachträge für bestehende Datenbanken (SQL-Editor) |
 | `lib/db.ts` | einziger Ort mit `pg`; Pool, `query()`, Transaktionen |
-| `lib/pdf.ts` | seitenweises Parsing, Scan-Erkennung |
+| `lib/pdf.ts` | seitenweises Parsing, Scan-Erkennung, doppelter Text (L2) |
+| `lib/text.ts` | Textbereinigung für Inhalt, Titel und Frage |
 | `lib/chunk.ts` | Chunking mit Überlappung, Token-Schätzung |
 | `lib/embeddings.ts` | Embeddings in Batches |
-| `lib/retrieval.ts` | Hybrid-Suche + RRF, fertiges SQL |
-| `lib/prompt.ts` | Systemprompt, Quellenblöcke, Beleg-Extraktion |
+| `lib/retrieval.ts` | Hybrid-Suche + RRF, fertiges SQL, Beinahe-Kopien |
+| `lib/prompt.ts` | Systemprompts, Quellenblöcke, Belege und Ausschnitt |
+| `lib/chat.ts` | Grenzen und Meldungen des Chats, Absage-Schwelle |
+| `lib/errors.ts` | Fehler einordnen: Konfiguration, Guthaben, vorübergehend |
 | `lib/env.ts` | alle Env-Zugriffe, lazy geprüft |
 | `lib/ingest.ts` | Upload prüfen, lesen, zerlegen, einbetten, speichern |
 | `lib/documents.ts` | Dokumente schreiben (eine Transaktion), listen, löschen |
@@ -74,48 +104,65 @@ Der Weg in Worten:
 | `lib/limits.ts` | Upload-Grenzen, geteilt von Server und Client |
 | `app/api/ingest/route.ts` | Upload-Endpoint |
 | `app/api/documents/` | Quellen listen (`GET`) und löschen (`DELETE /:id`) |
-| `app/api/chat/route.ts` | Chat-Endpoint (Gerüst, `501` bis Schritt 3) |
+| `app/api/chat/route.ts` | Chat: Frage an die angehakten Quellen, Antwort als Stream mit Belegliste vorweg |
+| `app/api/documents/[id]/file/` | Originaldatei für „Im Original öffnen, Seite N“ |
 | `app/api/summary/route.ts` | Zusammenfassung und drei Fragevorschläge (`GET` Cache, `POST` erzeugen) |
 | `components/workspace.tsx` | Client-Zustand: Quellen, Auswahl, Upload, Löschen |
-| `fixtures/` | eigene CC0-Testdokumente (Muster-Mietvertrag, Scan-Beispiel) |
+| `components/chat.tsx`, `chat-answer.tsx` | Chat, Antwort mit Belegknöpfen und Belegkarte |
+| `components/notebook-overview.tsx` | Überblick und Fragevorschläge im leeren Chat |
+| `fixtures/` | eigene CC0-Testdokumente (Muster-Mietvertrag, Scan, Duplikate, leeres PDF) |
 
 ---
 
-## Was Schritt 2 kann
+## Was Notebook kann
 
-**Notebooks.** Quellen gehören zu einem Notebook, wie in NotebookLM. Die Demo
-hat genau eins, „Demo“, mit fester ID aus `db/schema.sql`; einen
-Notebook-Umschalter gibt es bewusst nicht. Die Ebene kommt trotzdem jetzt,
-weil sie später nachzurüsten eine Migration auf bereits hochgeladenen Daten
-wäre. In der Sidebar ist jede Quelle per Checkbox an- und abwählbar; diese
-Auswahl geht in Schritt 3 als `documentIds` an den Chat. Neue Quellen sind
-automatisch ausgewählt.
+**Quellen hochladen.** PDF, Markdown und reiner Text bis 4 MB. PDFs werden
+seitenweise gelesen, Markdown und Text haben keine Seiten, ihre Chunks
+tragen `page = null` statt einer erfundenen Seitenzahl. Dokument,
+Originaldatei (`bytea`) und Chunks landen in **einer** Transaktion. Die
+Quellen gehören zum Notebook „Demo“ (feste ID aus `db/schema.sql`), sind in
+der Sidebar per Checkbox an- und abwählbar und lassen sich löschen.
 
-**Upload.** `POST /api/ingest` nimmt PDF, Markdown und reinen Text, liest
-PDFs seitenweise, zerlegt in Chunks, erzeugt Embeddings und schreibt
-Dokument, Originaldatei (`bytea`) und Chunks in **einer** Transaktion.
-Antwort `201` mit `{ id, title, sourceType, pageCount, chunkCount }`.
-Markdown und Text haben keine Seiten, ihre Chunks tragen `page = null` statt
-einer erfundenen Seitenzahl.
+**Fragen mit Belegen.** Eine Frage geht mit den angehakten Quellen an
+`POST /api/chat`. Die Suche ist hybrid: Vektorsuche für Bedeutung und
+deutsche Volltextsuche für exakte Begriffe, fusioniert per RRF. Jede
+Aussage trägt einen Beleg `[n]`, höchstens zwei pro Aussage. Ein Klick
+öffnet eine Karte mit Titel, Seite und dem Ausschnitt, der am besten zur
+Frage passt, dazu „Im Original öffnen, Seite N“ mit Sprung auf die Seite.
 
-**Grenzen und Fehler** — alle Meldungen deutsch, ohne Stacktrace:
+**Ehrliche Absage.** Passt kein Treffer (beste Ähnlichkeit unter 0,25),
+antwortet Notebook „Das steht nicht in den bereitgestellten Quellen.“, ohne
+das Modell zu fragen. Findet die Suche etwas, das die Frage nicht
+beantwortet, verlangt der Systemprompt dieselbe Absage.
+
+**Überblick und Fragevorschläge.** Im leeren Chat steht eine kurze, belegte
+Zusammenfassung aller Quellen mit drei Fragen, die sich damit beantworten
+lassen. Ein Klick stellt die Frage. Erzeugt wird einmal pro Quellenstand
+(SHA-256 über die Inhalte), danach kommt sie aus dem Cache. Upload und
+Löschen machen den Cache von selbst ungültig.
+
+**Rate-Limits** pro IP, gezählt in Postgres (`rate_limit_events`), Antwort
+`429` mit `Retry-After`:
+
+| Endpoint | Grenze | gezählt |
+| --- | --- | --- |
+| Upload | 8 / 15 min | jeder angenommene Upload |
+| Chat | 20 / 15 min | jede gültige Frage, auch eine Absage (sie kostet ein Embedding) |
+| Zusammenfassung | 6 / 15 min | nur, wenn kein Cache passt |
+
+**Fehlermeldungen** sind deutsch, ohne Stacktrace, und raten nur dann zu
+einem neuen Versuch, wenn Warten hilft:
 
 | Fall | Antwort |
 | --- | --- |
-| Datei über 4 MB | `413` (Vercel schneidet bei ~4,5 MB ab; der Client prüft vorab) |
-| PDF über 40 Seiten | `413`, geprüft vor der Textextraktion |
-| mehr als 200 Abschnitte, auch bei Text und Markdown | `413`, vor den Embeddings |
+| Datei über 4 MB, PDF über 40 Seiten, mehr als 200 Abschnitte | `413`, vor Textextraktion bzw. Embeddings |
 | Office, Bilder, HTML, CSV | `415` |
-| Scan-PDF oder Datei ohne Text | `422` (kein OCR, siehe Nicht-Ziele) |
-| leere oder kaputte Datei | `400` |
+| Scan-PDF, leeres PDF, Textdatei ohne Text oder nicht UTF-8 | `422` (kein OCR, siehe Nicht-Ziele) |
+| leere oder kaputte Datei, leere Frage, keine Quelle ausgewählt | `400` |
 | dieselbe Datei schon im Notebook | `409`, ohne erneut einzubetten |
-| mehr als 8 Uploads pro 15 Minuten und IP | `429` mit `Retry-After` |
-| Embedding-Dienst nicht erreichbar | `502`, nichts gespeichert |
-
-**Warum das Rate-Limit schon jetzt.** Die Demo hat keinen Login, und ab
-diesem Schritt ist der Embedding-Pfad öffentlich. Gezählt wird in Postgres
-(`rate_limit_events`) statt in einem externen Dienst: kein neuer Account,
-kein neuer Key.
+| Key fehlt oder falsch, Guthaben leer, Schema oder Migration fehlt, falsches DB-Passwort | `503`, „nicht vollständig eingerichtet“ bzw. Guthaben, ohne Retry-Hinweis |
+| OpenAI nicht erreichbar | `502` mit Retry-Hinweis, beim Upload wird nichts gespeichert |
+| Antwort dauert über 45 s | Abbruch mit eigener Meldung (Zusammenfassung: `504`) |
 
 **Warum Row Level Security.** Supabase veröffentlicht jede Tabelle in
 `public` über seine REST-API, und der `anon`-Key ist dort nicht geheim. Die
@@ -190,8 +237,9 @@ pgvector ist in Supabase vorinstalliert, ein eigenes Datenbank-Setup entfällt.
 **3. Schema einspielen**
 
 Das Skript ist idempotent und kann gefahrlos erneut laufen. **Nach jedem
-Schritt, der `db/schema.sql` ändert, erneut ausführen** — Schritt 2 ergänzt
-Notebooks, Dateiinhalt, Duplikatschutz, Rate-Limit-Tabelle und RLS.
+Schritt, der `db/schema.sql` ändert, erneut ausführen.** Für eine neue
+Datenbank genügt dieses eine Skript, die Migrationen darunter sind darin
+schon enthalten.
 
 Bequemster Weg: Inhalt von `db/schema.sql` im Supabase-Dashboard unter
 **SQL Editor** einfügen und ausführen.
@@ -219,23 +267,27 @@ cp .env.example .env.local
 
 In `.env.local` zwei Werte eintragen:
 
-- `DATABASE_URL` — aus Supabase unter **Project Settings → Database →
+- `DATABASE_URL`: aus Supabase unter **Project Settings → Database →
   Connection string → URI**. Für die App den **Pooler-Port 6543** nehmen,
   nicht 5432: serverlose Functions öffnen viele kurze Verbindungen, und der
-  Pooler davor ist genau dafür da.
-- `OPENAI_API_KEY` — ein Key mit monatlichem Ausgabenlimit
+  Pooler davor ist genau dafür da. Am Ende der URL
+  `?uselibpqcompat=true&sslmode=require`, also im Format
+
+  ```text
+  postgresql://postgres.<projekt-ref>:<passwort>@aws-0-<region>.pooler.supabase.com:6543/postgres?uselibpqcompat=true&sslmode=require
+  ```
+
+  Ohne `uselibpqcompat=true` behandelt `pg` `sslmode=require` wie
+  `verify-full` und scheitert an der Zertifikatskette des Poolers mit
+  `self-signed certificate in certificate chain` (die App meldet dann 503).
+- `OPENAI_API_KEY`: ein Key mit monatlichem Ausgabenlimit
   (`platform.openai.com` → Settings → Limits).
+- optional `CHAT_MODEL` (Standard `gpt-4o-mini`), gilt für Chat und
+  Zusammenfassung.
 
-Beide Werte gehören später in Vercel unter **Settings → Environment
-Variables** (Production und Preview), nicht ins Repo. `.env.local` steht in
+Diese Werte gehören in Vercel unter **Settings → Environment Variables**
+(Production und Preview), nicht ins Repo. `.env.local` steht in
 `.gitignore`.
-
-Meldet die App auf Vercel `self-signed certificate in certificate chain`,
-liegt das an `sslmode=require` in der URL: `pg` behandelt das inzwischen
-wie `verify-full`. Dann `sslmode=require` durch
-`uselibpqcompat=true&sslmode=require` ersetzen. Das ist von dieser
-Entwicklungsmaschine aus nicht geprüft, weil sie keine Postgres-Ports
-erreicht.
 
 **5. Starten**
 
@@ -251,7 +303,7 @@ leer, ein Seed beim Deploy bräuchte den OpenAI-Key in der CI.
 **Prüfen, ob alles baut und läuft**
 
 ```bash
-npm run test         # vitest: 100 Tests, ~4 s, inkl. Postgres via PGlite
+npm run test         # vitest: 285 Tests in 19 Dateien, ~10 s, inkl. Postgres via PGlite
 npm run typecheck    # tsc --noEmit
 npm run build        # next build
 npm run lint
@@ -292,11 +344,61 @@ Feature ist eine zusätzliche Stelle, an der die Live-Demo brechen kann.
   eine Schema-Migration plus Re-Embedding, nicht nur eine Env-Änderung.
 - **Kein OCR.** Gescannte PDFs werden erkannt (`probablyScanned`) und offen
   abgelehnt statt stillschweigend leere Antworten zu liefern.
+- **Kein Chat-Verlauf.** Jede Frage geht einzeln an den Server, ohne die
+  vorigen Antworten im Prompt, und der Verlauf ist nach einem Reload weg.
+  Ein Verlauf im Prompt verwässert „nur aus den Quellen“, und Folgefragen
+  bräuchten einen eigenen Umformulierungsschritt.
 - **Kein eigener PDF-Viewer.** „Im Original öffnen, Seite N“ an der
   Belegkarte öffnet die Datei im PDF-Viewer des Browsers mit `#page=N`.
   Chrome, Edge und Firefox springen auf die Seite; **Safari ignoriert den
   Anker** und zeigt Seite 1. Ein eingebetteter pdf.js-Viewer mit Markierung
   der Fundstelle wäre ein neues Paket samt Worker für einen Browser.
+
+---
+
+## Bekannte Grenzen
+
+Was gebaut ist, aber nicht so gut, wie es sein könnte. Die Kürzel verweisen
+auf [`docs/review-schritt-3.md`](docs/review-schritt-3.md).
+
+- **Offene Demo.** Kein Login, kein Verlauf: Jeder Besucher sieht und
+  löscht dieselben Quellen. Die Rate-Limits schützen nur die Kosten.
+- **Safari springt nicht auf die Seite.** `#page=N` ignoriert Safari und
+  öffnet Seite 1. Chrome, Edge und Firefox springen.
+- **Ein `[1]` an jeder Listenzeile.** Der Prompt verlangt einen Beleg pro
+  Aussage, auch wenn alle Zeilen aus derselben Quelle stammen.
+- **Ausschnitt nach Fragewörtern.** Die Belegkarte im Chat zeigt die
+  Stelle des Chunks mit den meisten Wörtern der Frage, nicht die Stelle der
+  zitierten Aussage (die steht erst nach dem Stream fest). In der
+  Zusammenfassung richtet sich der Ausschnitt nach dem zitierenden Satz.
+- **Vorschläge über alle Quellen.** Der Überblick fasst das ganze Notebook
+  zusammen. Ist die passende Quelle abgewählt, sagt der Chat ehrlich ab.
+- **Gesperrte Überschriften.** „A U S B I L D U N G“ aus manchen
+  Lebenslauf-Exporten findet die Volltextsuche nicht, den Text darunter
+  schon (Test in `tests/unit/unsaubere-eingaben.test.ts`).
+- **Textbereinigung gilt ab jetzt.** Quellen, die vor der Bereinigung
+  unsichtbarer Zeichen und zerlegter Umlaute hochgeladen wurden, behalten
+  ihre alten Chunks, bis man sie löscht und neu hochlädt.
+- **F3, Tag-Grenzen im Prompt.** `</quelle>` wird im Quelltext entschärft,
+  Varianten mit Nullbreite und weichem Trennzeichen entfernt die Bereinigung
+  vorher. Andere Formatzeichen (Bidi-Steuerung) und `＜/quelle＞` in voller
+  Breite bleiben stehen. Ob ein Modell sie als Blockende liest, ist offen.
+- **F5, Rate-Limit.** Zählen und Prüfen sind zwei Statements ohne Sperre:
+  Parallele Anfragen derselben IP können das Limit knapp überschreiten.
+  Die IP stammt aus `x-forwarded-for` und ist nur hinter Vercel
+  vertrauenswürdig.
+- **F6, Datei-Route.** Manche Sonderzeichen im Dateinamen sind nicht nach
+  RFC 5987 kodiert, und eine gelöschte Quelle bleibt im selben Browser bis
+  zu fünf Minuten im Cache.
+- **F7, Reihenfolge der Prüfung.** Die IDs einer riesigen Quellenauswahl
+  werden geprüft, bevor die Höchstzahl greift.
+- **F8, Testlücken.** Der Abbruch durch den Nutzer („Stopp“) und der
+  HNSW-Pfad aus F1 sind nicht als Unit-Test abgedeckt.
+- **S4, kein Timeout vor dem Stream.** Das Embedding der Frage hat kein
+  eigenes Zeitlimit. Hängt es, greift erst die Plattform nach 60 s.
+- **S6/R9, SQL außerhalb von `lib/db.ts`.** `lib/documents.ts` und
+  `lib/summary-store.ts` enthalten eigenes SQL. `AGENTS.md` erlaubt das,
+  die Prüflisten der Rollen nicht; das klärt ein eigener PR.
 
 ---
 
@@ -309,13 +411,14 @@ Feature ist eine zusätzliche Stelle, an der die Live-Demo brechen kann.
       an-/abwählbaren Quellen, Limits, Duplikatschutz, Rate-Limit, RLS,
       CC0-Fixtures. Plan: [`docs/schritt-2-plan.md`](docs/schritt-2-plan.md),
       Review: [`docs/review-schritt-2.md`](docs/review-schritt-2.md).
-- [ ] **Schritt 3 — Chat.** `retrieve` → `streamText` mit der Quellenauswahl
-      als `documentIds`, Belege im UI als Karten mit Seitenzahl und Sprung
-      ins PDF (die Datei liegt seit Schritt 2 in `documents.file_bytes`);
-      Verweigerungstext; Auto-Zusammenfassung und Fragevorschläge nach dem
-      Upload; Rate-Limit am Chat.
+- [x] **Schritt 3 — Chat.** Gestreamte Antworten mit Belegkarten und
+      Seitensprung, Absage, Überblick mit Fragevorschlägen, Rate-Limits,
+      klare Fehler, Tests für unsaubere Eingaben.
+      Plan: [`docs/schritt-3-plan.md`](docs/schritt-3-plan.md),
+      Review: [`docs/review-schritt-3.md`](docs/review-schritt-3.md).
 - [ ] **Schritt 4 — Eval + Feinschliff.** Eval-Set aus `docs/eval-plan.md`
-      implementieren, Trefferquote messen und im README nennen, Loom-Video.
+      implementieren, Absage-Schwelle kalibrieren, Trefferquote messen und
+      hier nennen, Loom-Video.
 
 Ein Eval-Set ist der stärkste einzelne Baustein für den Reviewer, weil es
 zeigt, dass die Pipeline messbar ist und nicht nur gefühlt funktioniert —
