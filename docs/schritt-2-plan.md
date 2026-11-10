@@ -2,7 +2,7 @@
 
 Ziel für heute: nach diesem Schritt kann Leonardo ein PDF (oder Markdown/Text) hochladen, es landet vollständig in Supabase, die Sidebar zeigt echte Quellen, und ein Vercel-Preview ist anschließbar. Chat, Auto-Zusammenfassung und Fragevorschläge bleiben Schritt 3. Der Schnitt ist auf 1–2 Stunden Umsetzung ausgelegt.
 
-Voraussetzung: Dieser Plan gilt erst nach Leonardos Freigabe. Danach setzt der Umsetzer ihn in kleinen Commits auf `feature/ingest` um. Kein Merge, kein Deployment durch eine Rolle.
+**Status: freigegeben von Leonardo am 10.11.2026**, mit Notebook-Ebene und nur eigenen CC0-Fixtures (siehe [Entscheidungen von Leonardo](#entscheidungen-von-leonardo)). Der Umsetzer setzt ihn in kleinen Commits auf `feature/ingest` um. Kein Merge, kein Deployment durch eine Rolle.
 
 ---
 
@@ -32,9 +32,9 @@ Eine Tabelle `rate_limit_events (ip, endpoint, created_at)` plus Hilfsfunktion, 
 
 Der Entwicklungsrechner erreicht keine Postgres-Ports; CI soll weiter ohne Secrets laufen. Deshalb Dev-Dependencies `@electric-sql/pglite` und `@electric-sql/pglite-pgvector` (siehe Prüfung unten). Die Schreibfunktionen (Insert, Liste, Löschen, Rate-Limit) bekommen einen schmalen Query-Executor: Produktion verdrahtet `lib/db.ts` (`pg`), Tests den PGlite-Helper. `embedTexts` wird in den Tests durch deterministische, normalisierte 1536-Vektoren ersetzt. Parser-Tests laufen gegen echte Dateien unter `fixtures/`. Die 501-Erwartung in `tests/unit/api-validation.test.ts` für Ingest wird bewusst umgeschrieben; die Chat-501-Tests bleiben bis Schritt 3.
 
-### 7. Option (Freigabe nötig): Notebooks als Ebene
+### 7. Notebooks als Ebene (freigegeben)
 
-Vorschlag: Tabelle `notebooks`, `documents.notebook_id … ON DELETE CASCADE`, ein Default-Notebook „Demo", Quellen in der Sidebar an- und abwählbar (die Chat-Route kennt `documentIds` schon). Aufwand etwa 30–45 Minuten für Schema, Filter und Checkboxen; ein Notebook-Umschalter ist nicht Teil des Vorschlags. Begründung: NotebookLM ist so aufgebaut, und `notebook_id` später nachzurüsten ist eine Migration auf bereits hochgeladenen Demo-Daten. Wenn Leonardo die Option abwählt, bleiben Dokumente global wie bisher — der Rest des Plans ändert sich nicht.
+Vorschlag: Tabelle `notebooks`, `documents.notebook_id … ON DELETE CASCADE`, ein Default-Notebook „Demo", Quellen in der Sidebar an- und abwählbar (die Chat-Route kennt `documentIds` schon). Aufwand etwa 30–45 Minuten für Schema, Filter und Checkboxen; ein Notebook-Umschalter ist nicht Teil des Vorschlags. Begründung: NotebookLM ist so aufgebaut, und `notebook_id` später nachzurüsten ist eine Migration auf bereits hochgeladenen Demo-Daten. Leonardo hat die Option angenommen; Dokumente sind damit nicht mehr global, sondern hängen am Default-Notebook „Demo“.
 
 Auto-Zusammenfassung nach dem Upload und vorgeschlagene Fragen gehören zu Schritt 3. Hier nur erwähnt, damit sie nicht still in diesen Schnitt rutschen.
 
@@ -110,12 +110,12 @@ Kein `pdf-lib` in der App: Fixture-PDFs einmal erzeugen und als Binärdateien un
 
 ## Seed-PDFs
 
-Vorschlag (Leonardo bestätigt unter Frage 2): zwei selbst verfasste, kurze deutsche PDFs unter `fixtures/`, Lizenz CC0, Zahlen und Seitenzahlen passend zu `docs/eval-plan.md`.
+Freigegeben (Frage 2): zwei selbst verfasste, kurze deutsche PDFs unter `fixtures/`, Lizenz CC0, Zahlen und Seitenzahlen passend zu `docs/eval-plan.md`.
 
 - `fixtures/muster-mietvertrag.pdf` — ca. 6 Seiten, Fließtext, Paragrafen, Miete 1.150 €, Kaution 3.450 €, Kündigungsfrist drei Monate. Hauptquelle für Demo und späteres Eval.
 - `fixtures/scan-beispiel.pdf` — bildbasiert bzw. fast ohne Text, nur für den 422-Test, nicht für die Demo.
 
-Die Demo startet leer; Leonardo lädt den Mietvertrag im Loom hoch. Kein Seed-Skript beim Deploy (das würde den OpenAI-Key in der CI brauchen). Ein zweites, amtliches Dokument (z. B. ein kurzes Werk von [gesetze-im-internet.de](https://www.gesetze-im-internet.de), urheberrechtsfrei als amtliches Werk) nur, wenn Leonardo das fürs Video will.
+Die Demo startet leer; Leonardo lädt den Mietvertrag im Loom hoch. Kein Seed-Skript beim Deploy (das würde den OpenAI-Key in der CI brauchen). Kein amtliches Dokument im Repo (Entscheidung von Leonardo). Ein öffentliches PDF kann er im Video live hochladen, ohne dass es eingecheckt wird.
 
 ---
 
@@ -130,7 +130,9 @@ Nach dem Umsetzungs-PR, nicht vorher:
 
 ---
 
-## Offene Fragen an Leonardo
+## Entscheidungen von Leonardo
 
-1. Soll die Notebook-Ebene (Tabelle, Default-Notebook „Demo", Quellen an-/abwählbar, ca. 30–45 Min.) in Schritt 2 mitlaufen, oder bleiben Dokumente vorerst global?
-2. Sind die selbst verfassten CC0-Fixtures (Muster-Mietvertrag plus Scan-Beispiel) als Seed in Ordnung, oder soll zusätzlich ein kurzes amtliches PDF (gesetze-im-internet.de) für die Demo ins Repo?
+Freigabe am 10.11.2026, beide offenen Fragen beantwortet:
+
+1. **Notebook-Ebene: ja.** Tabelle `notebooks`, Default-Notebook „Demo“, `documents.notebook_id` mit `ON DELETE CASCADE`, Quellen in der Sidebar an- und abwählbar (an die Chat-Route gehen später die gewählten `documentIds`). Kein Notebook-Umschalter in diesem Schritt.
+2. **Seed: nur eigene CC0-Fixtures.** `fixtures/muster-mietvertrag.pdf` und `fixtures/scan-beispiel.pdf`, kein amtliches PDF im Repo. Begründung: bekannte Antworten auf bekannten Seiten für Eval und Demo, keine Lizenzfrage.
