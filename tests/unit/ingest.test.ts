@@ -118,6 +118,19 @@ describe("POST /api/ingest: Erfolg", () => {
     expect(response.status).toBe(201);
   });
 
+  it("speichert Text mit NUL-Byte, statt an Postgres zu scheitern (Live-Befund L1)", async () => {
+    // Postgres lehnt U+0000 in text ab ("invalid byte sequence ... 0x00").
+    // Live kam das aus einem Word-PDF; hier reicht eine Textdatei, weil beide
+    // Quelltypen durch dieselbe Bereinigung laufen.
+    const response = await handleIngest(
+      uploadRequest(fileFrom("Lebens\u0000lauf von Max.", "cv.txt", "text/plain")),
+      deps,
+    );
+    expect(response.status).toBe(201);
+    const { rows } = await db.query<{ content: string }>("SELECT content FROM chunks");
+    expect(rows.map((row) => row.content).join(" ")).toContain("Lebenslauf von Max.");
+  });
+
   it("bettet Kontext-Header plus Inhalt ein, zitiert aber nur den Inhalt", async () => {
     const seen: string[] = [];
     await uploadMietvertrag({
