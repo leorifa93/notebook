@@ -25,7 +25,7 @@ import {
   permanentErrorMessage,
 } from "@/lib/errors";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
-import { CHAT_RATE_LIMIT, clientIp, consumeRateLimit } from "@/lib/rate-limit";
+import { CHAT_RATE_LIMIT, clientIp, consumeRateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { REFUSAL_TEXT, SYSTEM_PROMPT, buildCitations, buildUserPrompt } from "@/lib/prompt";
 import { retrieveAndRerank, type RetrievedChunk } from "@/lib/retrieval";
 import { stripControlChars } from "@/lib/text";
@@ -153,15 +153,7 @@ export async function handleChat(request: Request, deps: ChatDeps): Promise<Resp
     // Nach der Validierung: Ungültige Anfragen kosten nichts und zählen
     // nicht. Eine Absage zählt, sie kostet ein Embedding.
     const rate = await consumeRateLimit(deps.db, clientIp(request), CHAT_RATE_LIMIT);
-    if (!rate.allowed) {
-      const minutes = Math.ceil(rate.retryAfterSeconds / 60);
-      return NextResponse.json(
-        {
-          error: `Zu viele Fragen in kurzer Zeit. Bitte versuche es in ${minutes} ${minutes === 1 ? "Minute" : "Minuten"} erneut.`,
-        },
-        { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
-      );
-    }
+    if (!rate.allowed) return tooManyRequests("Fragen", rate.retryAfterSeconds);
 
     const documentIds = await existingDocumentIds(
       deps.db,

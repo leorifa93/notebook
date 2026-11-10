@@ -29,6 +29,7 @@ im Pull Request begründet werden.
 app/
   api/ingest/route.ts   Upload: validieren → parse → chunk → embed → insert
   api/chat/route.ts     Frage: retrieve → prompt → stream
+  api/summary/route.ts  Überblick: Quellenstand → Cache oder Modell → Cache
   page.tsx, layout.tsx  UI
 components/
   ui/                   shadcn-Primitives, generisch, ohne Fachlogik
@@ -41,8 +42,11 @@ lib/
   embeddings.ts         Text → Vektor
   retrieval.ts          Frage → Kandidaten
   prompt.ts             Kandidaten → Prompt, Belege
+  summary.ts            Zusammenfassung: Auswahl, Prüfung (auch im Client)
+  summary-store.ts      Quellenstand und Cache `notebook_summaries`
   env.ts                alle Env-Zugriffe
 db/schema.sql           Schema, idempotent
+db/migrations/          Einzelne Nachträge für bestehende Datenbanken
 docs/                   Konzepte, keine Implementierung
 eval/                   Eval-Set (JSON) und Runner
 ```

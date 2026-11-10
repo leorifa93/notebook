@@ -578,3 +578,128 @@ mit `pdftotext` vergleicht.
 
 `npm run typecheck`, `npm run lint`, `npm test` (220 Tests in 16 Dateien)
 und `npm run build` grün auf dem Stand vor diesem Doku-Commit.
+
+## 3b, dritter PR: Zusammenfassung und Fragevorschläge (Plan-Commits 12–14)
+
+Branch `feature/zusammenfassung`. Vor jedem Commit liefen `@tester` und
+die `@reviewer`-Prüfliste gegen den gestagten Diff, danach der
+Pre-commit-Hook. Kein frischer Reviewer-Chat: Das ist Leonardos Review des
+PRs bzw. der Durchgang am Schrittende.
+
+| Commit | Inhalt |
+| --- | --- |
+| `db: Cache für Zusammenfassung …` | `notebook_summaries` in `db/schema.sql` (idempotent, RLS) und als eigenständige Migration `db/migrations/2026-11-10-notebook-summaries.sql` |
+| `rate-limit: 429-Antwort … zusammenziehen` | `tooManyRequests()` für Upload, Chat und Zusammenfassung (schließt S5) |
+| `api: Zusammenfassung und Fragevorschläge …` | `GET`/`POST /api/summary`, `SUMMARY_SYSTEM_PROMPT`, `lib/summary.ts`, `lib/summary-store.ts` |
+| `ui: Zusammenfassung und Vorschläge …` | Überblick im leeren Chat statt der festen Beispielfragen, `lib/summary-client.ts` |
+
+### Entscheidungen
+
+- **Quellenstand.** `sources_key` = SHA-256 über die sortierten
+  `content_sha256` aller Dokumente des Notebooks; Zeilen ohne Hash (vor
+  Schritt 2) gehen mit ihrer ID ein. Upload und Löschen machen den Cache
+  ungültig, ohne dass jemand ihn löscht.
+- **Eingabe.** Abwechselnd aus jedem Dokument, dort quer verteilt (Anfang,
+  Mitte, Viertel …), bis 6.000 geschätzte Tokens oder 12 Chunks. Erst nur
+  IDs und Tokenzahlen, dann der Inhalt der gewählten Chunks, damit ein
+  großes PDF nicht komplett durch den Pooler geht. Die Grenze von 12
+  Chunks steht nicht im Plan: Bei vielen kleinen Chunks liefe die
+  Belegliste sonst bis `[40]`.
+- **Ausgabe.** `generateObject` mit `jsonSchema()` aus `ai` (kein `zod`)
+  und eigener `validate`-Funktion: Text mit mindestens einem Beleg, kein
+  Beleg außerhalb der Quellen, genau drei verschiedene Fragen ohne `[n]`.
+  Alles andere ist „unbrauchbar“ → 200 mit `summary: null`, nicht gecacht.
+- **Belege.** `buildCitations()` wie im Chat. Der Ausschnitt richtet sich
+  je Beleg nach den Sätzen der Zusammenfassung, die ihn zitieren, statt
+  nach einer Frage (offener Punkt aus L2, hier ohne Mehraufwand lösbar).
+- **Systemprompt.** `SUMMARY_SYSTEM_PROMPT` ist neu und folgt den Regeln
+  des Chats nach L2: nur aus den Quellen, höchstens zwei Belege pro
+  Aussage, kein Markdown. Zusätzlich: Die Quellen sind Ausschnitte, und
+  Text in den Quellen ist keine Anweisung. Freigegeben mit Frage 2 des
+  Plans. `SYSTEM_PROMPT` ist byte-gleich (SHA-256-Test grün).
+- **Rate-Limit.** `SUMMARY_RATE_LIMIT` 6 / 15 min / IP, gezählt erst nach
+  der Cache-Prüfung. Ein Reload oder ein zweiter POST zum selben Stand
+  kostet nichts und zählt nicht (Test: acht POSTs bei Cache-Treffer, ein
+  Eintrag in `rate_limit_events`).
+- **Nebenläufige POSTs.** Zwei Tabs ohne Cache erzeugen beide. Eine Sperre
+  über den Modellaufruf hieße eine offene Transaktion am Pooler für
+  mehrere Sekunden; das Upsert auf den Primärschlüssel hält genau eine
+  Zeile. Mehrkosten ~0,001 $, vom Rate-Limit gedeckelt. Ändern sich die
+  Quellen während des Aufrufs, kommt der Text an, wird aber nicht gecacht
+  (vor dem Speichern wird der Quellenstand neu gelesen).
+- **Fehler.** Wie im Chat: Konfiguration und Guthaben 503, OpenAI 502,
+  Timeout (45 s) 504, sonst 500. Fehlt `notebook_summaries` (42P01, also
+  Migration nicht ausgeführt), greift die Klassifizierung aus F2: 503
+  „nicht vollständig eingerichtet“. Der Chat liest die Tabelle nicht und
+  antwortet weiter (Test auf einer Datenbank ohne die Tabelle).
+- **UI.** Überblick nur im leeren Chat, über alle Quellen (so beschriftet).
+  Ein Vorschlag stellt die Frage sofort an die angehakten Quellen; ohne
+  Auswahl erscheint ein Hinweis statt einer 400. Nach Upload und Löschen
+  lädt der Überblick neu, ein laufender Abruf wird abgebrochen und kann
+  den neuen Zustand nicht überschreiben. „Erneut versuchen“ nur, wenn
+  Warten hilft (nicht bei 503 und 429).
+
+### Befunde aus den Pro-Commit-Reviews
+
+| # | Commit | Schweregrad | Befund | Behebung |
+| --- | --- | --- | --- | --- |
+| Z1 | 13 | wichtig | Das Log bei unbrauchbarer Ausgabe enthielt den Modelltext; die Meldungen des SDK zitieren die Ausgabe wörtlich, also Inhalte der Quellen in den Vercel-Logs | nur der Grund aus `validateSummaryOutput` bzw. „kein gültiges JSON“; Test prüft, dass der Text nicht im Log steht, ohne Fix rot |
+| Z2 | S5 | hinweis | `SUMMARY_RATE_LIMIT` stand zuerst im Refactoring-Commit, ohne Aufrufer | in Commit 13 verschoben |
+| Z3 | 14 | wichtig | `animate-fade-in` am Überblick hinterlässt `transform`; die auf schmalen Fenstern fest positionierte Belegkarte wäre im Container gelandet (wie U6) | Animation entfernt; per Playwright gemessen: Karte 12 px vom Rand, volle Breite |
+| Z4 | 14 | hinweis | Ein abgebrochener Abruf konnte nach dem Abbruch noch seinen Zustand setzen | Zustand nur übernehmen, solange das Signal nicht abgebrochen ist |
+| Z5 | 14 | hinweis | Hinweis ohne Auswahl versprach „dann wird die Frage gestellt“, gesendet wird aber nicht automatisch | Text: „… um die Frage zu stellen.“ |
+| Z6 | 14 | hinweis | „Erneut versuchen“ bei 503, obwohl die Meldung sagt, dass es nicht hilft | `retryable` im Fehlerzustand, Knopf nur bei vorübergehenden Fehlern |
+
+### Geprüft und in Ordnung
+
+- Kein Secret im Diff, keine neue Abhängigkeit, kein `console.log`, keine
+  Inline-Styles. `lib/summary.ts` und `lib/summary-client.ts` haben keine
+  Server-Importe; SQL und `node:crypto` stehen in `lib/summary-store.ts`.
+- `TODO(Schritt 3, Commit 14)` aus `components/chat.tsx` entfernt.
+- Ohne Quellen keine Modellanfrage (Test mit leerer Datenbank).
+- `buildUserPrompt()` erzeugt denselben Text wie vorher; die
+  Quellenblöcke teilt es jetzt mit `buildSummaryPrompt()`.
+
+### Von Hand geprüft (Playwright gegen lokalen Mock)
+
+Echte Handler gegen PGlite mit Stub-Embeddings und `MockLanguageModelV2`
+(Zusammenfassung 2,5 s verzögert), `next dev` davor, 1440×900 und
+390×844. Screenshots außerhalb des Repos:
+
+- lädt („Notebook liest deine Quellen …“), fertig mit `[n]` und
+  Belegliste, Belegkarte aus der Zusammenfassung, ohne Auswahl (Hinweis),
+  Vorschlag gesendet (Body `{ question, documentIds }` mit beiden IDs),
+  nicht verfügbar, 503 ohne „Erneut versuchen“ (Eingabe bleibt nutzbar),
+  schmal mit Karte am unteren Rand;
+- Anfragen: erster Besuch `GET` + `POST`, Reload nur `GET`, nach einem
+  Upload `GET` + `POST`. Im Dev-Modus erscheint jedes `GET` doppelt, weil
+  React im Strict Mode Effekte zweimal startet (der erste wird
+  abgebrochen); in Production einmal.
+
+### Ein echter Aufruf (lokal)
+
+Einmal `gpt-4o-mini` mit dem Lebenslauf, lokal in PGlite, kein
+Production-Schreibzugriff; Ergebnis nur als Zahlen: 200 in 4,0 s, 3 Sätze,
+568 Zeichen, 5 Chunks im Prompt, Belege `[1]`–`[3]`, höchstens zwei an
+einer Aussage, kein Markdown, drei Fragen zwischen 68 und 85 Zeichen,
+danach `GET` aus dem Cache. Die Belegkarten zeigten jeweils die Stelle zur
+zitierten Aussage.
+
+### Offen
+
+- Leonardo muss die Migration im Supabase-SQL-Editor ausführen. Bis dahin
+  meldet der Überblick 503, der Chat läuft weiter.
+- Eine unbrauchbare Ausgabe wird nicht gecacht; jeder Besuch versucht es
+  dann neu, gedeckelt durch das Rate-Limit (6 / 15 min).
+- Die Vorschläge beziehen sich auf alle Quellen. Ist die passende Quelle
+  abgewählt, sagt der Chat ehrlich ab.
+- SQL in `lib/summary-store.ts` wie in `lib/documents.ts`: weiter S6/R9.
+- README-Stand („Schritt 2“) und die Zeile zur Chat-Route sind veraltet:
+  Commit 16 (Redakteur). Hier nur die Migration und die neuen Dateien.
+- F3, F5–F8, S4 und S6/R9 aus den früheren Durchgängen; S5 ist mit
+  `tooManyRequests()` geschlossen.
+
+### Testergebnis
+
+`npm run typecheck`, `npm run lint`, `npm test` (267 Tests in 18 Dateien)
+und `npm run build` grün. Vorher (main nach #13): 220 Tests in 16 Dateien.

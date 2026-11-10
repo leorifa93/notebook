@@ -135,6 +135,39 @@ COMMENT ON TABLE rate_limit_events IS
   'Gezählte Anfragen pro IP und Endpoint für das Rate-Limit der offenen Demo.';
 
 -- ----------------------------------------------------------------------------
+-- notebook_summaries: Zusammenfassung und drei Fragevorschläge (Schritt 3).
+--
+-- Eine Zeile pro Notebook, gültig für genau einen Quellenstand. `sources_key`
+-- ist der SHA-256 über die sortierten `content_sha256` aller Dokumente des
+-- Notebooks (lib/summary.ts). Ein Upload oder Löschen ändert den Schlüssel,
+-- der Cache gilt dann als veraltet, ohne dass jemand ihn löschen muss.
+-- Gecacht statt bei jedem Öffnen erzeugt: ein Modellaufruf je Quellenstand,
+-- und ein Reload kostet nichts (Entscheidung 6 in docs/schritt-3-plan.md).
+--
+-- Für bestehende Datenbanken dieselbe Tabelle als eigenständiges Skript:
+-- db/migrations/2026-11-10-notebook-summaries.sql.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS notebook_summaries (
+  -- Eine Zusammenfassung pro Notebook; ein gelöschtes Notebook nimmt sie mit.
+  notebook_id uuid        PRIMARY KEY REFERENCES notebooks (id) ON DELETE CASCADE,
+  sources_key text        NOT NULL,
+  -- Text mit Belegen [n]; n zeigt in `citations`.
+  summary     text        NOT NULL,
+  -- Belegliste im Format von `Citation` (lib/prompt.ts), Index 1-basiert.
+  citations   jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  -- Genau drei Fragen als JSON-Array von Strings.
+  questions   jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  -- Welches Modell den Text geschrieben hat; wichtig, wenn CHAT_MODEL wechselt.
+  model       text        NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE notebook_summaries IS
+  'Zusammenfassung und Fragevorschläge je Notebook, gültig für sources_key.';
+COMMENT ON COLUMN notebook_summaries.sources_key IS
+  'SHA-256 über die sortierten content_sha256 der Dokumente (lib/summary.ts).';
+
+-- ----------------------------------------------------------------------------
 -- Indexe
 -- ----------------------------------------------------------------------------
 
@@ -207,10 +240,11 @@ CREATE INDEX IF NOT EXISTS rate_limit_events_lookup_idx
 -- Dokumente lesen, Chunks ändern oder das Rate-Limit leeren.
 -- ENABLE ist idempotent; ein zweiter Lauf ändert nichts.
 -- ----------------------------------------------------------------------------
-ALTER TABLE notebooks         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE documents         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE chunks            ENABLE ROW LEVEL SECURITY;
-ALTER TABLE rate_limit_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notebooks          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chunks             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rate_limit_events  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notebook_summaries ENABLE ROW LEVEL SECURITY;
 
 -- ----------------------------------------------------------------------------
 -- Hinweise für den Betrieb

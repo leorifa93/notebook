@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { CONFIG_ERROR_MESSAGE, isConfigError } from "@/lib/errors";
 import { IngestError, ingestUpload, readUpload, type IngestDeps } from "@/lib/ingest";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
-import { INGEST_RATE_LIMIT, clientIp, consumeRateLimit } from "@/lib/rate-limit";
+import { INGEST_RATE_LIMIT, clientIp, consumeRateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 /**
  * Logik hinter POST /api/ingest, mit austauschbaren Abhängigkeiten.
@@ -38,15 +38,7 @@ export async function handleIngest(
     // Nach der Formularprüfung, vor allem Teuren: Parsen und Embeddings
     // laufen erst, wenn diese IP noch Kontingent hat.
     const rate = await consumeRateLimit(deps.db, clientIp(request), INGEST_RATE_LIMIT);
-    if (!rate.allowed) {
-      const minutes = Math.ceil(rate.retryAfterSeconds / 60);
-      return NextResponse.json(
-        {
-          error: `Zu viele Uploads in kurzer Zeit. Bitte versuche es in ${minutes} ${minutes === 1 ? "Minute" : "Minuten"} erneut.`,
-        },
-        { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
-      );
-    }
+    if (!rate.allowed) return tooManyRequests("Uploads", rate.retryAfterSeconds);
 
     const upload = await readUpload(file, deps.limits);
     const stored = await ingestUpload(upload, DEFAULT_NOTEBOOK_ID, deps);

@@ -145,6 +145,18 @@ export function Workspace() {
     [documents, excludedIds],
   );
 
+  // Wechselt mit jedem Upload und Löschen; der Überblick im Chat lädt dann neu.
+  const sourcesSignature = useMemo(
+    () =>
+      sources.status === "ready"
+        ? documents
+            .map((document) => document.id)
+            .sort()
+            .join(",")
+        : null,
+    [sources.status, documents],
+  );
+
   return (
     <main className="flex h-full min-h-screen flex-col md:flex-row">
       <div
@@ -172,6 +184,7 @@ export function Workspace() {
         <Chat
           selectedIds={selectedIds}
           totalCount={documents.length}
+          sourcesSignature={sourcesSignature}
           onOpenSources={() => setSourcesOpen(true)}
         />
       </div>

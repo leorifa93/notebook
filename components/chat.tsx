@@ -5,6 +5,7 @@ import { AlertCircle, ArrowUp, Library, Sparkles, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { ChatAnswer, PendingLine } from "@/components/chat-answer";
+import { NotebookOverview } from "@/components/notebook-overview";
 import { Button } from "@/components/ui/button";
 import { MAX_QUESTION_CHARS, type ChatUIMessage } from "@/lib/chat";
 import { chatErrorMessage, createChatTransport, messageText } from "@/lib/chat-client";
@@ -17,13 +18,6 @@ import { chatErrorMessage, createChatTransport, messageText } from "@/lib/chat-c
  * Verlauf lebt nur hier im Browser und ist nach einem Reload weg.
  */
 
-// TODO(Schritt 3, Commit 14): durch Fragevorschläge aus der Zusammenfassung ersetzen.
-const EXAMPLE_QUESTIONS = [
-  "Was ist die Kernaussage von Seite 3?",
-  "Welche Fristen nennt das Dokument?",
-  "Fasse die wichtigsten Punkte in fünf Sätzen zusammen.",
-];
-
 /** Ab hier zeigt der Composer, wie viele Zeichen noch gehen. */
 const COUNTER_FROM = MAX_QUESTION_CHARS - 200;
 
@@ -35,10 +29,15 @@ interface Note {
 interface ChatProps {
   selectedIds: readonly string[];
   totalCount: number;
+  /**
+   * Ändert sich mit jedem Upload und Löschen; lädt den Überblick neu.
+   * `null`, solange die Quellenliste noch nicht geladen ist.
+   */
+  sourcesSignature: string | null;
   onOpenSources: () => void;
 }
 
-export function Chat({ selectedIds, totalCount, onOpenSources }: ChatProps) {
+export function Chat({ selectedIds, totalCount, sourcesSignature, onOpenSources }: ChatProps) {
   const transport = useMemo(() => createChatTransport(), []);
   const { messages, sendMessage, status, error, stop } = useChat<ChatUIMessage>({ transport });
   const [input, setInput] = useState("");
@@ -76,12 +75,17 @@ export function Chat({ selectedIds, totalCount, onOpenSources }: ChatProps) {
     if (element && stickToBottom.current) element.scrollTop = element.scrollHeight;
   }, [messages, status]);
 
+  function ask(text: string): void {
+    if (busy || blockedReason !== null || text.length === 0) return;
+    stickToBottom.current = true;
+    void sendMessage({ text }, { body: { documentIds: [...selectedIds] } });
+  }
+
   function submit(event?: FormEvent): void {
     event?.preventDefault();
     if (!canSend) return;
-    stickToBottom.current = true;
     setInput("");
-    void sendMessage({ text: question }, { body: { documentIds: [...selectedIds] } });
+    ask(question);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -103,11 +107,6 @@ export function Chat({ selectedIds, totalCount, onOpenSources }: ChatProps) {
       );
     }
     void stop();
-  }
-
-  function pickExample(example: string): void {
-    setInput(example);
-    inputRef.current?.focus();
   }
 
   const waitingForFirstChunk = status === "submitted" && lastMessage?.role === "user";
@@ -144,7 +143,16 @@ export function Chat({ selectedIds, totalCount, onOpenSources }: ChatProps) {
         className="flex-1 overflow-y-auto px-4 py-6 scrollbar-slim sm:px-6"
       >
         {messages.length === 0 ? (
-          <EmptyState disabled={blockedReason !== null} onPick={pickExample} />
+          totalCount > 0 && sourcesSignature !== null ? (
+            <NotebookOverview
+              sourcesSignature={sourcesSignature}
+              selectedCount={selectedCount}
+              onAsk={ask}
+              onOpenSources={onOpenSources}
+            />
+          ) : (
+            <EmptyState />
+          )
         ) : (
           <ol className="mx-auto flex w-full max-w-3xl flex-col gap-6" aria-label="Verlauf">
             {messages.map((message) => (
@@ -235,7 +243,8 @@ export function Chat({ selectedIds, totalCount, onOpenSources }: ChatProps) {
   );
 }
 
-function EmptyState({ disabled, onPick }: { disabled: boolean; onPick: (question: string) => void }) {
+/** Noch keine Quelle: Erklärung statt Überblick, ohne Modellanfrage. */
+function EmptyState() {
   return (
     <div className="flex h-full items-center justify-center py-4">
       <div className="w-full max-w-lg animate-fade-in">
@@ -245,23 +254,8 @@ function EmptyState({ disabled, onPick }: { disabled: boolean; onPick: (question
         <h2 className="text-balance text-xl font-semibold tracking-tight">Frag deine Dokumente</h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           Antworten entstehen ausschließlich aus den angehakten Quellen. Steht etwas nicht im
-          Dokument, sagt Notebook das offen, statt zu raten.
-        </p>
-        <div className="mt-6 flex flex-col gap-2">
-          {EXAMPLE_QUESTIONS.map((example) => (
-            <button
-              key={example}
-              type="button"
-              disabled={disabled}
-              onClick={() => onPick(example)}
-              className="rounded-lg border border-border bg-card px-4 py-3 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:text-muted-foreground disabled:hover:bg-card"
-            >
-              {example}
-            </button>
-          ))}
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Beispielfragen – ein Klick übernimmt sie ins Eingabefeld.
+          Dokument, sagt Notebook das offen, statt zu raten. Sobald eine Quelle da ist, steht hier
+          ein Überblick mit Fragevorschlägen.
         </p>
       </div>
     </div>

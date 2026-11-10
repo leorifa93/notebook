@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 
-import { clientIp, consumeRateLimit, type RateLimitRule } from "@/lib/rate-limit";
+import { clientIp, consumeRateLimit, tooManyRequests, type RateLimitRule } from "@/lib/rate-limit";
 
 import { createTestDatabase } from "../helpers/pglite";
 
@@ -76,5 +76,21 @@ describe("clientIp", () => {
 
   it("fällt ohne Header auf einen festen Schlüssel zurück", () => {
     expect(clientIp(new Request("http://localhost"))).toBe("unbekannt");
+  });
+});
+
+describe("tooManyRequests", () => {
+  it("antwortet 429 mit Retry-After und Minutenangabe", async () => {
+    const response = tooManyRequests("Fragen", 125);
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("125");
+    expect(await response.json()).toEqual({
+      error: "Zu viele Fragen in kurzer Zeit. Bitte versuche es in 3 Minuten erneut.",
+    });
+  });
+
+  it("sagt „1 Minute“ im Singular, auch bei wenigen Sekunden", async () => {
+    const body = (await tooManyRequests("Uploads", 5).json()) as { error: string };
+    expect(body.error).toBe("Zu viele Uploads in kurzer Zeit. Bitte versuche es in 1 Minute erneut.");
   });
 });
