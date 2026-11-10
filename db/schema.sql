@@ -30,6 +30,19 @@ COMMENT ON TABLE documents IS
 COMMENT ON COLUMN documents.source_type IS
   'pdf | text | markdown – validiert in detectSourceType() (lib/pdf.ts).';
 
+-- Originaldatei in derselben Zeile (Schritt 2). Der Seitensprung im Chat
+-- (Schritt 3) braucht das Original. Als bytea statt Supabase Storage, damit
+-- Datei, Dokument und Chunks in *einer* Transaktion landen und kein zweiter
+-- Dienst mit eigenen Policies dazukommt. Bei wenigen Dateien unter 4 MB ist
+-- das über TOAST unkritisch; produktiv gehörte das in einen Objektspeicher.
+-- Nullable, weil ALTER TABLE ... ADD COLUMN auf bestehenden Zeilen laufen
+-- muss; der Ingest setzt beide Spalten immer.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_bytes bytea;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS mime_type  text;
+
+COMMENT ON COLUMN documents.file_bytes IS
+  'Originaldatei, geschrieben in derselben Transaktion wie die Chunks.';
+
 -- ----------------------------------------------------------------------------
 -- chunks: die eigentliche Sucheinheit.
 --
@@ -64,6 +77,25 @@ COMMENT ON TABLE chunks IS
   'Chunks mit Seitenzahl und Embedding. Sucheinheit für Vektor- und Volltextsuche.';
 COMMENT ON COLUMN chunks.page IS
   'Seite im Originaldokument, 1-basiert. NULL bei seitenlosen Quellen.';
+
+-- ----------------------------------------------------------------------------
+-- rate_limit_events: ein Eintrag pro gezählter Anfrage (Schritt 2).
+--
+-- Die Demo ist bewusst ohne Login. Ohne Limit kann jeder den Embedding-Pfad
+-- mit dem Demo-Key leerlaufen lassen. In Postgres statt Upstash o. ä.: kein
+-- neuer Account, kein neuer Key, und die Tabelle ist in Supabase sichtbar.
+-- Die Zählung (Fenster, Limit) steckt in lib/rate-limit.ts.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rate_limit_events (
+  id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  ip         text        NOT NULL,
+  -- z. B. 'ingest'; Chat bekommt in Schritt 3 einen eigenen Schlüssel.
+  endpoint   text        NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE rate_limit_events IS
+  'Gezählte Anfragen pro IP und Endpoint für das Rate-Limit der offenen Demo.';
 
 -- ----------------------------------------------------------------------------
 -- Indexe
@@ -111,6 +143,10 @@ CREATE INDEX IF NOT EXISTS chunks_document_page_idx
 -- Übersicht in der Seitenleiste, neueste zuerst.
 CREATE INDEX IF NOT EXISTS documents_created_at_idx
   ON documents (created_at DESC);
+
+-- Zählen im Fenster: "Anfragen dieser IP an diesen Endpoint seit T".
+CREATE INDEX IF NOT EXISTS rate_limit_events_lookup_idx
+  ON rate_limit_events (endpoint, ip, created_at);
 
 -- ----------------------------------------------------------------------------
 -- Hinweise für den Betrieb
