@@ -51,9 +51,77 @@ function truncate(text: string, maxChars: number): string {
   return `${(lastSpace > maxChars * 0.8 ? cut.slice(0, lastSpace) : cut).trimEnd()} …`;
 }
 
-function snippet(text: string, maxChars = 240): string {
+/** Länge des Ausschnitts an der Belegkarte, ohne die Auslassungszeichen. */
+export const SNIPPET_CHARS = 320;
+
+/** So viel Text vor dem ersten Treffer, damit der Satzanfang mit im Bild ist. */
+const SNIPPET_LEAD_CHARS = 60;
+
+/**
+ * Wörter, die in fast jeder Frage stehen und nichts über die gesuchte Stelle
+ * sagen. Kurz gehalten: Wörter unter vier Buchstaben zählen ohnehin nicht.
+ */
+const STOP_WORDS = new Set([
+  "aber", "alle", "auch", "auf", "bitte", "dass", "dem", "den", "der", "des", "die", "dies",
+  "diese", "dieser", "dokument", "durch", "eine", "einem", "einen", "einer", "eines", "gibt",
+  "haben", "hatte", "hier", "nach", "nicht", "noch", "oder", "quelle", "quellen", "sein",
+  "sind", "steht", "über", "unter", "viel", "viele", "von", "warum", "welche", "welchem",
+  "welchen", "welcher", "welches", "wenn", "werden", "wird", "wurde", "wieso", "wofür",
+  "womit", "worum", "zwischen",
+]);
+
+const WORD = /[\p{L}\p{N}]+/gu;
+
+function questionTerms(question: string): string[] {
+  const words = question.toLocaleLowerCase("de").match(WORD) ?? [];
+  return [...new Set(words.filter((word) => word.length >= 4 && !STOP_WORDS.has(word)))];
+}
+
+/**
+ * Gleicher Wortstamm, grob: Ein Wort ist Anfang des anderen. Fängt Plural
+ * und Beugung ab („Rückfrage“ ~ „Rückfragen“), ohne Stemmer-Paket.
+ */
+function sameStem(word: string, term: string): boolean {
+  return word.startsWith(term) || (word.length >= 4 && term.startsWith(word));
+}
+
+/**
+ * Ausschnitt für die Belegkarte: das Fenster mit den meisten Wörtern der
+ * Frage, sonst der Anfang.
+ *
+ * Live-Befund L2: Der Ausschnitt war immer der Chunk-Anfang. Bei Chunks bis
+ * 2.880 Zeichen stand die zitierte Aussage oft weit dahinter, und ein
+ * richtiger Beleg sah falsch aus. Gezählt werden verschiedene Fragewörter
+ * vor bloßer Trefferzahl, damit ein Fenster mit „Kaution“ und „Höhe“ eines
+ * mit dreimal „Kaution“ schlägt.
+ */
+function snippet(text: string, question: string, maxChars = SNIPPET_CHARS): string {
   const clean = text.replace(/\s+/g, " ").trim();
-  return truncate(clean, maxChars);
+  if (clean.length <= maxChars) return clean;
+
+  const terms = questionTerms(question);
+  const hits: Array<{ index: number; term: number }> = [];
+  for (const match of clean.toLocaleLowerCase("de").matchAll(WORD)) {
+    const term = terms.findIndex((candidate) => sameStem(match[0], candidate));
+    if (term >= 0) hits.push({ index: match.index, term });
+  }
+  if (hits.length === 0) return truncate(clean, maxChars);
+
+  let best = { start: 0, distinct: 0, count: 0 };
+  for (const [position, hit] of hits.entries()) {
+    const start = Math.max(0, hit.index - SNIPPET_LEAD_CHARS);
+    const inside = hits.slice(position).filter((other) => other.index < start + maxChars - SNIPPET_LEAD_CHARS);
+    const distinct = new Set(inside.map((other) => other.term)).size;
+    if (distinct > best.distinct || (distinct === best.distinct && inside.length > best.count)) {
+      best = { start, distinct, count: inside.length };
+    }
+  }
+  if (best.start === 0) return truncate(clean, maxChars);
+
+  // Vorn an die nächste Wortgrenze, damit kein Wortrest am Anfang steht.
+  const space = clean.indexOf(" ", best.start - 1);
+  const from = space === -1 || space >= best.start + SNIPPET_LEAD_CHARS ? best.start : space + 1;
+  return `… ${truncate(clean.slice(from), maxChars)}`;
 }
 
 /**
@@ -72,7 +140,10 @@ export function citationHref(documentId: string, page: number | null): string {
  * Baut die Belegliste, die im UI gezeigt wird und auf die der Prompt verweist.
  * Nummer `n` hier ist `[n]` im Antworttext.
  */
-export function buildCitations(chunks: readonly RetrievedChunk[]): Citation[] {
+export function buildCitations(
+  chunks: readonly RetrievedChunk[],
+  question: string,
+): Citation[] {
   return chunks.map((chunk, index) => ({
     index: index + 1,
     chunkId: chunk.chunkId,
@@ -80,7 +151,7 @@ export function buildCitations(chunks: readonly RetrievedChunk[]): Citation[] {
     documentTitle: chunk.documentTitle,
     page: chunk.page,
     href: citationHref(chunk.documentId, chunk.page),
-    snippet: snippet(chunk.content),
+    snippet: snippet(chunk.content, question),
   }));
 }
 
