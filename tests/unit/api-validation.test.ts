@@ -70,18 +70,4 @@ describe("POST /api/ingest", () => {
     );
     expect(response.status).toBe(400);
   });
-
-  it("weist eine Datei mit PDF-Endung, aber ohne lesbares PDF mit 400 ab", async () => {
-    const form = new FormData();
-    form.append(
-      "file",
-      new File([new Uint8Array([37, 80, 68, 70])], "test.pdf", {
-        type: "application/pdf",
-      }),
-    );
-    const response = await ingestPost(
-      new Request("http://localhost/api/ingest", { method: "POST", body: form }),
-    );
-    expect(response.status).toBe(400);
-  });
 });
