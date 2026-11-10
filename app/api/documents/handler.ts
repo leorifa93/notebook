@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import type { Queryable } from "@/lib/db";
+import { ConfigError } from "@/lib/env";
+import { CONFIG_ERROR_MESSAGE } from "@/lib/errors";
 import { deleteDocument, getNotebook, isUuid, listDocuments } from "@/lib/documents";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
 
@@ -13,6 +15,9 @@ function serverError(context: string, error: unknown): NextResponse {
   console.error(`[documents] ${context} failed`, {
     error: error instanceof Error ? error.message : String(error),
   });
+  if (error instanceof ConfigError) {
+    return NextResponse.json({ error: CONFIG_ERROR_MESSAGE }, { status: 503 });
+  }
   return NextResponse.json(
     { error: "Die Quellen konnten gerade nicht geladen werden." },
     { status: 500 },

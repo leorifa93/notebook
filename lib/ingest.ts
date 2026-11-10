@@ -8,6 +8,7 @@ import {
   insertDocumentWithChunks,
   type StoredDocument,
 } from "@/lib/documents";
+import { classifyUpstreamError, permanentErrorMessage } from "@/lib/errors";
 import {
   MAX_CHUNKS_PER_SOURCE,
   MAX_FILE_BYTES,
@@ -36,7 +37,7 @@ export type SourceType = "pdf" | "text" | "markdown";
 /** Fehler, die der Nutzer sehen soll: deutscher Text, passender Status. */
 export class IngestError extends Error {
   constructor(
-    readonly status: 400 | 409 | 413 | 415 | 422 | 429 | 502,
+    readonly status: 400 | 409 | 413 | 415 | 422 | 429 | 502 | 503,
     message: string,
   ) {
     super(message);
@@ -188,8 +189,9 @@ export function embeddingInput(chunk: Chunk): string {
 /**
  * Gelesene Datei → Chunks → Embeddings → eine Transaktion.
  *
- * Ein Fehler beim Embedding ist ein Fehler des Dienstes (502), nicht der
- * Datei; der Nutzer soll wissen, dass ein erneuter Versuch sinnvoll ist.
+ * Ein Fehler beim Embedding ist ein Fehler des Dienstes, nicht der Datei.
+ * Vorübergehend (502): erneuter Versuch sinnvoll. Fehlender oder falscher
+ * Key bzw. leeres Guthaben (503): Warten hilft nicht, also sagen wir das.
  */
 export async function ingestUpload(
   upload: ParsedUpload,
@@ -218,11 +220,15 @@ export async function ingestUpload(
   try {
     embeddings = await deps.embed(chunks.map(embeddingInput));
   } catch (error) {
+    const kind = classifyUpstreamError(error);
     console.error("[ingest] embedding failed", {
       title: upload.title,
       chunkCount: chunks.length,
+      kind,
       error: error instanceof Error ? error.message : String(error),
     });
+    const permanent = permanentErrorMessage(kind);
+    if (permanent) throw new IngestError(503, permanent);
     throw new IngestError(
       502,
       "Die Embeddings konnten gerade nicht erzeugt werden. Bitte versuche es gleich noch einmal.",
