@@ -2,7 +2,7 @@
 
 Ziel: Nach diesem Schritt stellt Leonardo im Notebook „Demo“ eine Frage zu den angehakten Quellen. Die Antwort kommt gestreamt, jede Aussage trägt einen Beleg `[n]`, und ein Klick auf den Beleg zeigt Ausschnitt und Seite und öffnet das Original-PDF auf genau dieser Seite. Steht die Antwort nicht in den Quellen, sagt Notebook das. Beim Öffnen steht eine kurze Zusammenfassung mit drei Fragevorschlägen da. Eval und README-Feinschliff bleiben Schritt 4.
 
-**Status: Entwurf, wartet auf Freigabe durch Leonardo.** Rolle: `@architekt`. Kein Anwendungscode in diesem PR. Die Umsetzung beginnt erst nach Antwort auf die [offenen Entscheidungen](#offene-entscheidungen-für-leonardo).
+**Status: freigegeben von Leonardo am 10.11.2026**, alle vier Fragen wie empfohlen entschieden, dazu der Auftrag, die gefundenen Schwächen im bestehenden Code in diesem Schritt mit zu beheben (siehe [Entscheidungen von Leonardo](#entscheidungen-von-leonardo)). Rolle: `@architekt`. Umsetzung in zwei Teilen: 3a Backend (Commits 2–8) auf `feature/chat`, 3b UI und Zusammenfassung (Commits 9–16) erst nach Leonardos Review von 3a.
 
 Ausgangslage (Stand `main` nach PR #5): `POST /api/chat` validiert nur und antwortet `501`. `retrieve()` (Hybrid + RRF), `SYSTEM_PROMPT`, `buildUserPrompt()` und `buildCitations()` sind seit Schritt 1 vorbereitet, aber nie gegen echte Daten gelaufen. Installiert sind `ai@5.0.285` und `@ai-sdk/openai@2.0.140`; `@ai-sdk/react` fehlt.
 
@@ -179,9 +179,33 @@ Reihenfolge nach Freigabe, jeder Commit einzeln reviewbar und mit eigenen Tests;
 
 ---
 
-## Offene Entscheidungen für Leonardo
+## Offene Entscheidungen für Leonardo (entschieden, siehe unten)
 
 1. **Neue Abhängigkeit `@ai-sdk/react` für `useChat`?** Empfehlung: **ja**, `2.0.x` passend zu `ai@5.0.x`, exakt gepinnt. Spart den eigenen SSE-Reader samt Abbruch und Fehlerzuständen; Alternative ist `fetch` + `readUIMessageStream` aus `ai` ohne neues Paket, kostet etwa eine Stunde mehr und ist fehleranfälliger.
 2. **Zusammenfassung und Vorschläge lazy pro Quellenstand, gecacht in `notebook_summaries`, mit neuem `SUMMARY_SYSTEM_PROMPT`?** Empfehlung: **ja**. Kein längerer Upload, ein Modellaufruf je Quellenstand (≈ 0,001 $), Belege `[n]` auch in der Zusammenfassung. Alternative: pro Dokument beim Ingest.
 3. **Jede Frage einzeln, ohne Verlauf im Prompt?** Empfehlung: **ja**. Hält „nur aus den Quellen“ sauber und spart einen Umformulierungs-Schritt; Folgefragen müssen dann vollständig gestellt werden („Wie hoch ist die Kaution?“ statt „und die Kaution?“). Alternative: die letzten zwei Runden mitschicken plus Umformulierung der Suchanfrage (+1 Modellaufruf pro Frage).
 4. **Absage vor dem Modell bei bester Ähnlichkeit unter 0,25?** Empfehlung: **ja**, als Startwert, Kalibrierung in Schritt 4 am Eval. Deterministisch testbar und spart Kosten bei Off-Topic-Fragen; Risiko: zu hohe Schwelle verweigert berechtigte Fragen — deshalb bleibt Regel 3 im Prompt als zweite Stufe und die Schwelle eine benannte Konstante.
+
+---
+
+## Entscheidungen von Leonardo
+
+Freigabe am 10.11.2026 („Passt“):
+
+1. **`@ai-sdk/react`: ja**, exakt gepinnt auf eine `2.0.x`, die zu `ai@5.0.285` passt. Commit 9.
+2. **Zusammenfassung: beim Öffnen, pro Quellenstand gecacht** in `notebook_summaries`, mit `SUMMARY_SYSTEM_PROMPT`. Commits 12–14.
+3. **Jede Frage einzeln:** kein Verlauf im Prompt, kein Verlauf in der DB.
+4. **Absage-Schwelle 0,25** als Startwert, Kalibrierung in Schritt 4.
+5. **Neu: Die Auffälligkeiten 1–7 werden in Schritt 3 mit behoben**, jeweils im passenden Commit und dort im Commit-Text benannt (oder als eigener Commit):
+
+| Auffälligkeit | Behebung | Commit |
+| --- | --- | --- |
+| 1. Leere Auswahl = alle Dokumente | leere Auswahl → 400 mit klarer Meldung, kein Embedding, kein Modellaufruf; `retrieve()` sucht nie ohne Dokumentfilter | 3 (Retrieval), 6 (Route) |
+| 2. Nicht-UUID-IDs → 500 | ungültige ID → 400 statt 500; der alte Test „filtert ungültige documentIds“ wird umgeschrieben | 6 |
+| 3. Prompt kürzt unter Chunk-Maximum | Kürzung aus `maxTokens × CHARS_PER_TOKEN` abgeleitet | 4 |
+| 4. Quellenblöcke nicht escaped | Titel und Text escapen, `</quelle>` kann den Block nicht mehr beenden | 4 |
+| 5. `retrieve()` nicht testbar | `{ db, embed }` übergeben, PGlite-Test | 3 |
+| 6. `href: null`, veralteter TODO | `href` auf `/api/documents/[id]/file#page=N`, TODO entfernt | 4 |
+| 7. Frage ohne Bereinigung | `stripControlChars()` aus `lib/pdf.ts` wiederverwenden; Test mit NUL-Byte bis zur DB-Abfrage | 6 |
+
+Abweichung zu Entscheidung 9 / Tabelle „Fehlerfälle“: Ungültige IDs werden nicht still herausgefiltert, sondern mit 400 abgelehnt (Leonardos Vorgabe). Fremde, aber gültige UUIDs fallen weiterhin über die Schnittmenge mit dem Notebook heraus.
