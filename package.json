@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepare": "husky || true"
+    "prepare": "husky || true",
+    "eval": "vite-node --config vitest.config.ts eval/run.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "2.0.140",

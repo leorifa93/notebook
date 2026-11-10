@@ -48,6 +48,22 @@ export function hitsExpectedPage(
 }
 
 /**
+ * 1-basierter Rang des ersten Treffers auf der erwarteten Seite, sonst
+ * `null`. Bei kleinen Korpora ist Recall@5 fast geschenkt (fünf von zwölf
+ * Chunks); der Rang zeigt, ob die richtige Stelle auch vorne liegt.
+ */
+export function expectedPageRank(
+  chunks: readonly Located[],
+  document: string,
+  pages: readonly number[],
+): number | null {
+  const index = chunks.findIndex(
+    (chunk) => chunk.documentTitle === document && chunk.page !== null && pages.includes(chunk.page),
+  );
+  return index === -1 ? null : index + 1;
+}
+
+/**
  * Zitat-Präzision: Zeigt mindestens ein zitiertes `[n]` auf die erwartete
  * Seite? `citations[n - 1]` ist der Beleg zu `[n]`.
  */

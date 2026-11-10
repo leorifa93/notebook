@@ -4,6 +4,7 @@ import {
   checkThreshold,
   citationsOutOfRange,
   citesExpectedPage,
+  expectedPageRank,
   hitsExpectedPage,
   isCleanRefusal,
   majority,
@@ -31,6 +32,12 @@ describe("hitsExpectedPage und citesExpectedPage", () => {
     expect(hitsExpectedPage(chunks, vertrag, [3])).toBe(true);
     expect(hitsExpectedPage(chunks, vertrag, [2])).toBe(false);
     expect(hitsExpectedPage(chunks, "produkthandbuch", [2, 6])).toBe(true);
+  });
+
+  it("nennt den Rang des ersten Treffers", () => {
+    expect(expectedPageRank(chunks, "produkthandbuch", [2])).toBe(2);
+    expect(expectedPageRank(chunks, vertrag, [3, 2])).toBe(1);
+    expect(expectedPageRank(chunks, vertrag, [5])).toBeNull();
   });
 
   it("wertet nur die tatsächlich zitierten Belege", () => {
