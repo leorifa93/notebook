@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { Queryable } from "@/lib/db";
-import { ConfigError } from "@/lib/env";
-import { CONFIG_ERROR_MESSAGE } from "@/lib/errors";
+import { CONFIG_ERROR_MESSAGE, isConfigError } from "@/lib/errors";
 import {
   deleteDocument,
   getDocumentFile,
@@ -22,7 +21,7 @@ function serverError(context: string, error: unknown): NextResponse {
   console.error(`[documents] ${context} failed`, {
     error: error instanceof Error ? error.message : String(error),
   });
-  if (error instanceof ConfigError) {
+  if (isConfigError(error)) {
     return NextResponse.json({ error: CONFIG_ERROR_MESSAGE }, { status: 503 });
   }
   return NextResponse.json(

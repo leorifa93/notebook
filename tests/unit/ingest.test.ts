@@ -12,11 +12,13 @@ import {
 } from "@/lib/documents";
 import { toSqlVector } from "@/lib/embeddings";
 import { ConfigError } from "@/lib/env";
+import { CONFIG_ERROR_MESSAGE } from "@/lib/errors";
 import { DEFAULT_LIMITS, type IngestDeps } from "@/lib/ingest";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
 import { INGEST_RATE_LIMIT } from "@/lib/rate-limit";
 import { HYBRID_SQL } from "@/lib/retrieval";
 
+import { dbError, failingDatabase } from "../helpers/db-errors";
 import { stubEmbed, stubEmbedding } from "../helpers/embeddings";
 import { fileFrom, readFixture, uploadRequest } from "../helpers/fixtures";
 import { createTestDatabase } from "../helpers/pglite";
@@ -250,6 +252,37 @@ describe("POST /api/ingest: Ablehnungen ohne Zeile in documents", () => {
     expect(body.error).toContain("hilft nicht");
     expect(body.error).toContain("nicht vollständig eingerichtet");
     await expectRejected(response, 503);
+  });
+});
+
+describe("Datenbank-Konfiguration (F2)", () => {
+  it("meldet beim Upload ein falsches Datenbank-Passwort als 503 ohne Retry-Hinweis", async () => {
+    const response = await uploadMietvertrag({
+      db: failingDatabase(dbError("password authentication failed", "28P01")),
+      embed: stubEmbed,
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toBe(CONFIG_ERROR_MESSAGE);
+  });
+
+  it("meldet beim Laden der Quellen ein fehlendes Schema als 503", async () => {
+    const response = await handleListDocuments(
+      failingDatabase(dbError('relation "notebooks" does not exist', "42P01")),
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toBe(CONFIG_ERROR_MESSAGE);
+  });
+
+  it("meldet einen Zertifikatsfehler beim Löschen als 503", async () => {
+    const response = await handleDeleteDocument(
+      failingDatabase(
+        dbError("self-signed certificate in certificate chain", "SELF_SIGNED_CERT_IN_CHAIN"),
+      ),
+      "00000000-0000-4000-8000-00000000abcd",
+    );
+    expect(response.status).toBe(503);
   });
 });
 

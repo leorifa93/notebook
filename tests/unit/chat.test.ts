@@ -6,11 +6,13 @@ import { handleChat, type ChatDeps } from "@/app/api/chat/handler";
 import { handleIngest } from "@/app/api/ingest/handler";
 import type { Citation } from "@/lib/prompt";
 import { ConfigError } from "@/lib/env";
+import { CONFIG_ERROR_MESSAGE } from "@/lib/errors";
 import { MAX_SELECTED_SOURCES, MIN_SIMILARITY, shouldRefuse } from "@/lib/chat";
 import { REFUSAL_TEXT, SYSTEM_PROMPT } from "@/lib/prompt";
 import { CHAT_RATE_LIMIT } from "@/lib/rate-limit";
 import { retrieve } from "@/lib/retrieval";
 
+import { dbError, failingDatabase } from "../helpers/db-errors";
 import { hangingModel, mockModel, readStream, streamedText, textParts } from "../helpers/chat";
 import { stubEmbed } from "../helpers/embeddings";
 import { fileFrom, readFixture, uploadRequest } from "../helpers/fixtures";
@@ -331,19 +333,33 @@ describe("POST /api/chat: Fehler", () => {
     expect(await errorOf(response)).toContain("in einem Moment erneut");
   });
 
-  it("meldet einen Datenbankfehler als 500 ohne interne Details", async () => {
+  // Bis F2 hielt dieser Test fest, dass ein fehlendes Schema als 500 mit
+  // „Bitte versuche es erneut“ ankommt. Warten hilft dabei nie; deshalb
+  // jetzt 503 mit Konfigurationsmeldung.
+  it("meldet ein fehlendes Schema als 503 ohne Retry-Hinweis (F2)", async () => {
     const response = await handleChat(
       chatRequest({ question: KAUTION, documentIds: [vertragId] }),
-      depsWith({
-        db: {
-          query: async () => {
-            throw new Error('relation "documents" does not exist');
-          },
-          transaction: async () => {
-            throw new Error('relation "documents" does not exist');
-          },
-        },
-      }),
+      depsWith({ db: failingDatabase(dbError('relation "documents" does not exist', "42P01")) }),
+    );
+    expect(response.status).toBe(503);
+    const error = await errorOf(response);
+    expect(error).toBe(CONFIG_ERROR_MESSAGE);
+    expect(error).not.toContain("documents");
+  });
+
+  it("meldet ein falsches Datenbank-Passwort als 503 (F2)", async () => {
+    const response = await handleChat(
+      chatRequest({ question: KAUTION, documentIds: [vertragId] }),
+      depsWith({ db: failingDatabase(dbError("password authentication failed", "28P01")) }),
+    );
+    expect(response.status).toBe(503);
+    expect(await errorOf(response)).toBe(CONFIG_ERROR_MESSAGE);
+  });
+
+  it("meldet einen vorübergehenden Datenbankfehler als 500 ohne interne Details", async () => {
+    const response = await handleChat(
+      chatRequest({ question: KAUTION, documentIds: [vertragId] }),
+      depsWith({ db: failingDatabase(dbError("Connection terminated unexpectedly")) }),
     );
     expect(response.status).toBe(500);
     const error = await errorOf(response);
