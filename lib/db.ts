@@ -28,6 +28,13 @@ export function getPool(): Pool {
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
     });
+    // Ein Pooler oder Supabase trennt ruhende Verbindungen irgendwann. `pg`
+    // meldet das als 'error' am Pool; ohne Listener wird daraus eine
+    // uncaughtException, die die ganze Instanz reißen kann. Der Pool ersetzt
+    // die Verbindung beim nächsten Query selbst, hier wird nur protokolliert.
+    pool.on("error", (error) => {
+      console.error("[db] idle client error", { error: error.message });
+    });
   }
   return pool;
 }
