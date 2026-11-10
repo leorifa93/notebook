@@ -118,6 +118,8 @@ export function detectSourceType(
   const lower = fileName.toLowerCase();
   if (mimeType === "application/pdf" || lower.endsWith(".pdf")) return "pdf";
   if (mimeType === "text/markdown" || lower.endsWith(".md")) return "markdown";
-  if (mimeType.startsWith("text/") || lower.endsWith(".txt")) return "text";
+  // Nur text/plain, nicht jedes text/*: HTML, CSV oder Quelltext landeten sonst
+  // mit Tags und Trennzeichen im Index.
+  if (mimeType === "text/plain" || lower.endsWith(".txt")) return "text";
   return "unsupported";
 }

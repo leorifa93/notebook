@@ -29,3 +29,15 @@ describe("detectSourceType", () => {
     );
   });
 });
+
+describe("detectSourceType: nur echter Text", () => {
+  it("nimmt HTML, CSV und Quelltext nicht als Text an", () => {
+    expect(detectSourceType("seite.html", "text/html")).toBe("unsupported");
+    expect(detectSourceType("daten.csv", "text/csv")).toBe("unsupported");
+    expect(detectSourceType("skript.js", "text/javascript")).toBe("unsupported");
+  });
+
+  it("nimmt .txt auch ohne MIME-Typ an", () => {
+    expect(detectSourceType("notiz.txt", "")).toBe("text");
+  });
+});
