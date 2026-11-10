@@ -187,6 +187,45 @@ MIETVERTRAG = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Duplikate-Beispiel: Text, der doppelt in der Textebene steht
+# ---------------------------------------------------------------------------
+#
+# Nachgebaut nach Live-Befund L2 (docs/review-schritt-3.md): Exporte aus
+# Layout-Programmen zeichnen Text teils zweimal an dieselbe Stelle (Pseudo-
+# Fettdruck) oder legen ganze Abschnitte ein zweites Mal versetzt ab. Im Bild
+# sieht man das nicht, pdf.js liefert aber beides als Text.
+
+DUPLIKATE_BLOCK = (
+    "Projekt Leuchtturm: Im ersten Bauabschnitt werden die Leitstelle, das Funknetz und die "
+    "Notstromversorgung erneuert. Die Leitstelle zieht dafür in das Erdgeschoss des Nordflügels, "
+    "weil dort die Zuleitungen für zwei getrennte Stromkreise schon liegen. Das Funknetz erhält "
+    "zwölf neue Basisstationen entlang der Küste, jede mit eigener Batterie für acht Stunden. "
+    "Die Notstromversorgung besteht aus zwei Dieselaggregaten mit je 400 Kilowatt, die sich "
+    "gegenseitig vertreten können. Abgenommen wird jeder Bauabschnitt erst nach einem Probelauf "
+    "von 72 Stunden ohne Störung."
+)
+
+
+def placed_line(text: str, x: float, y: float, font: str = "/F1", size: float = FONT_SIZE) -> bytes:
+    return b" ".join([b"BT", f"{font} {size} Tf".encode(), f"1 0 0 1 {x} {y} Tm".encode(), pdf_string(text) + b" Tj", b"ET"])
+
+
+def duplicate_page() -> bytes:
+    ops: list[bytes] = []
+    # Überschrift und ein Satz je zweimal deckungsgleich.
+    for _ in range(2):
+        ops.append(placed_line("Projektbericht Leuchtturm (Muster)", MARGIN_LEFT, TOP, "/F2", 13))
+    for _ in range(2):
+        ops.append(placed_line("Die Inbetriebnahme ist für den 14. Mai geplant.", MARGIN_LEFT, TOP - 30))
+    # Derselbe Abschnitt zweimal, der zweite 300 pt tiefer.
+    for top in (TOP - 60, TOP - 360):
+        for index, line in enumerate(textwrap.wrap(DUPLIKATE_BLOCK, WRAP)):
+            ops.append(placed_line(line, MARGIN_LEFT, top - index * LEADING))
+    ops.append(placed_line("Ansprechpartnerin für Rückfragen ist die Projektleitung Küste.", MARGIN_LEFT, 120))
+    return b"\n".join(ops)
+
+
 def main() -> None:
     total = len(MIETVERTRAG)
     pages = [
@@ -198,6 +237,8 @@ def main() -> None:
     # Scan-Beispiel: eine Seite, nur ein Bild, kein Textlayer.
     scan = b"q 467 0 0 660 64 110 cm /Im1 Do Q"
     write_pdf(HERE / "scan-beispiel.pdf", [(scan, {"width": 120, "height": 170})], "Scan-Beispiel")
+
+    write_pdf(HERE / "duplikate-beispiel.pdf", [(duplicate_page(), None)], "Duplikate-Beispiel")
 
 
 if __name__ == "__main__":
