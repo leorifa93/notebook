@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectSourceType, parseTextSource, stripControlChars } from "@/lib/pdf";
+import { detectSourceType, parseTextSource } from "@/lib/pdf";
 
 describe("detectSourceType", () => {
   it("erkennt PDFs am MIME-Typ", () => {
@@ -39,20 +39,6 @@ describe("detectSourceType: nur echter Text", () => {
 
   it("nimmt .txt auch ohne MIME-Typ an", () => {
     expect(detectSourceType("notiz.txt", "")).toBe("text");
-  });
-});
-
-describe("stripControlChars", () => {
-  it("entfernt NUL-Bytes, die Postgres in text ablehnt", () => {
-    expect(stripControlChars("Lebens\u0000lauf")).toBe("Lebenslauf");
-  });
-
-  it("entfernt weitere C0-Steuerzeichen und DEL", () => {
-    expect(stripControlChars("a\u0001b\u001Fc\u007Fd\u000Be")).toBe("abcde");
-  });
-
-  it("lässt Zeilenumbruch, Tab und Umlaute stehen", () => {
-    expect(stripControlChars("Größe\tÜbersicht\nZeile")).toBe("Größe\tÜbersicht\nZeile");
   });
 });
 

@@ -26,9 +26,9 @@ import {
 } from "@/lib/errors";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
 import { CHAT_RATE_LIMIT, clientIp, consumeRateLimit } from "@/lib/rate-limit";
-import { stripControlChars } from "@/lib/pdf";
 import { REFUSAL_TEXT, SYSTEM_PROMPT, buildCitations, buildUserPrompt } from "@/lib/prompt";
 import { retrieveAndRerank, type RetrievedChunk } from "@/lib/retrieval";
+import { stripControlChars } from "@/lib/text";
 
 /**
  * Logik hinter POST /api/chat, mit austauschbaren Abhängigkeiten.
