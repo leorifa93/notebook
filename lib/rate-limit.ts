@@ -35,6 +35,17 @@ export const CHAT_RATE_LIMIT: RateLimitRule = {
   windowSeconds: 15 * 60,
 };
 
+/**
+ * 6 neue Zusammenfassungen pro 15 Minuten und IP. Gezählt wird nur ein
+ * Cache-Miss: Ein Reload liest aus `notebook_summaries` und kostet nichts.
+ * Mehr als sechs Quellenstände in 15 Minuten erzeugt kein echter Nutzer.
+ */
+export const SUMMARY_RATE_LIMIT: RateLimitRule = {
+  endpoint: "summary",
+  limit: 6,
+  windowSeconds: 15 * 60,
+};
+
 export interface RateLimitResult {
   allowed: boolean;
   /** Sekunden bis zum nächsten freien Platz; 0, wenn erlaubt. */
