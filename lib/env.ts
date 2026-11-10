@@ -14,6 +14,18 @@ export const EMBEDDING_DIMENSIONS = 1536;
 /** Default für den Chat; überschreibbar über CHAT_MODEL. */
 export const DEFAULT_CHAT_MODEL = "gpt-4o-mini";
 
+/**
+ * Fehlende oder falsche Konfiguration. Eigene Klasse, weil ein erneuter
+ * Versuch hier nie hilft: Die Routen melden das als 503 ohne „versuch es
+ * gleich noch einmal“ (Befund R8 aus docs/review-schritt-2.md).
+ */
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigError";
+  }
+}
+
 function readEnv(name: string): string | undefined {
   const value = process.env[name];
   return value && value.trim() !== "" ? value.trim() : undefined;
@@ -23,7 +35,7 @@ function readEnv(name: string): string | undefined {
 export function databaseUrl(): string {
   const value = readEnv("DATABASE_URL");
   if (!value) {
-    throw new Error(
+    throw new ConfigError(
       "DATABASE_URL ist nicht gesetzt. Kopiere .env.example nach .env.local und trage die Supabase-URL (Pooler, Port 6543) ein.",
     );
   }
@@ -34,7 +46,7 @@ export function databaseUrl(): string {
 export function openAiApiKey(): string {
   const value = readEnv("OPENAI_API_KEY");
   if (!value) {
-    throw new Error(
+    throw new ConfigError(
       "OPENAI_API_KEY ist nicht gesetzt. Ohne Key können keine Embeddings und keine Antworten erzeugt werden.",
     );
   }

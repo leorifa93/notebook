@@ -1,3 +1,4 @@
+import { MAX_CHUNK_CHARS } from "@/lib/chunk";
 import type { RetrievedChunk } from "@/lib/retrieval";
 
 /**
@@ -18,18 +19,25 @@ export interface Citation {
   documentId: string;
   documentTitle: string;
   page: number | null;
-  /** Link auf die PDF-Seite im Viewer; `null` bei Quellen ohne Seiten. */
-  href: string | null;
+  /** Link auf die Originaldatei, bei Seiten mit `#page=N`. */
+  href: string;
   /** Gekürzter Auszug, damit der Nutzer den Beleg ohne Klick prüfen kann. */
   snippet: string;
 }
+
+/**
+ * Wortlaut der Absage. Steht im Systemprompt (Regel 3) und wird vom Chat
+ * auch ohne Modellaufruf gesendet, wenn keine Quelle passt. Eine Konstante,
+ * damit beide Wege und das Eval denselben Satz meinen.
+ */
+export const REFUSAL_TEXT = "Das steht nicht in den bereitgestellten Quellen.";
 
 export const SYSTEM_PROMPT = `Du bist Notebook, ein Assistent, der Fragen ausschließlich anhand der mitgelieferten Quellen beantwortet.
 
 Regeln, die nicht verhandelbar sind:
 1. Nutze ausschließlich die Inhalte aus den nummerierten Quellen. Kein Vorwissen, keine Vermutungen, keine Ergänzungen von außen.
 2. Belege jede inhaltliche Aussage mit der Nummer der Quelle, aus der sie stammt, in eckigen Klammern: [1] oder [2][3]. Mehrere Belege direkt hintereinander, keine Sammelbelege am Absatzende.
-3. Steht die Antwort nicht in den Quellen, schreibe: "Das steht nicht in den bereitgestellten Quellen." Nenne in diesem Fall, welche Information fehlt. Erfinde nichts.
+3. Steht die Antwort nicht in den Quellen, schreibe: "${REFUSAL_TEXT}" Nenne in diesem Fall, welche Information fehlt. Erfinde nichts.
 4. Wenn Quellen sich widersprechen, benenne den Widerspruch und belege beide Seiten.
 5. Antworte auf Deutsch, sachlich und knapp. Keine Einleitung, keine Wiederholung der Frage.
 6. Verweise auf Seiten nur über die Quellennummern. Seitenzahlen in deinem Fließtext sind nicht nötig, das UI zeigt sie am Beleg an.`;
@@ -48,15 +56,20 @@ function snippet(text: string, maxChars = 240): string {
 }
 
 /**
+ * Link auf die Originaldatei, bei PDFs mit Seitenanker.
+ *
+ * Die Datei liegt seit Schritt 2 in `documents.file_bytes` und wird von
+ * GET /api/documents/[id]/file ausgeliefert. `#page=N` versteht der
+ * PDF-Viewer von Chrome, Edge und Firefox; Safari öffnet auf Seite 1.
+ */
+export function citationHref(documentId: string, page: number | null): string {
+  const base = `/api/documents/${encodeURIComponent(documentId)}/file`;
+  return page === null ? base : `${base}#page=${page}`;
+}
+
+/**
  * Baut die Belegliste, die im UI gezeigt wird und auf die der Prompt verweist.
- *
- * Der `href` zeigt auf den PDF-Viewer mit `#page=N`; das ist der Sprung, den
- * ein Reviewer im Video ausprobiert. `sourcePath` ist der öffentlich
- * erreichbare Pfad der Originaldatei — solange es keinen gibt, bleibt der
- * Link `null` und das UI rendert nur die Seitenzahl.
- *
- * TODO(Schritt 2): `sourcePath` in `documents` speichern (Spalte ergänzen),
- * sobald Uploads persistiert werden.
+ * Nummer `n` hier ist `[n]` im Antworttext.
  */
 export function buildCitations(chunks: readonly RetrievedChunk[]): Citation[] {
   return chunks.map((chunk, index) => ({
@@ -65,9 +78,33 @@ export function buildCitations(chunks: readonly RetrievedChunk[]): Citation[] {
     documentId: chunk.documentId,
     documentTitle: chunk.documentTitle,
     page: chunk.page,
-    href: null,
+    href: citationHref(chunk.documentId, chunk.page),
     snippet: snippet(chunk.content),
   }));
+}
+
+/**
+ * Titel landen in einem Attribut: Anführungszeichen und spitze Klammern
+ * würden das Attribut oder den Tag beenden. Der Titel kommt aus dem
+ * Dateinamen, also vom Nutzer.
+ */
+function escapeAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Text aus Dokument oder Frage darf keinen Quellenblock öffnen oder
+ * schließen. Sonst endet ein Block vorzeitig, und was danach steht, liest
+ * das Modell als eigene Anweisung oder als zusätzliche Quelle. Nur die
+ * Block-Tags werden entschärft, der übrige Text bleibt wörtlich, damit
+ * Zitate und Zahlen wie „< 5 %“ unverändert ankommen.
+ */
+export function neutralizeSourceTags(text: string): string {
+  return text.replace(/<(\s*\/?\s*quelle)/gi, "‹$1");
 }
 
 /**
@@ -82,14 +119,17 @@ export function buildUserPrompt(
   chunks: readonly RetrievedChunk[],
 ): string {
   if (chunks.length === 0) {
-    return `Quellen:\n(keine Treffer)\n\nFrage: ${question}`;
+    return `Quellen:\n(keine Treffer)\n\nFrage: ${neutralizeSourceTags(question)}`;
   }
 
   const blocks = chunks.map((chunk, index) => {
     const page = chunk.page === null ? "ohne Seitenangabe" : `Seite ${chunk.page}`;
     return [
-      `<quelle nr="${index + 1}" dokument="${chunk.documentTitle}" ${page}>`,
-      truncate(chunk.content, 2400),
+      `<quelle nr="${index + 1}" dokument="${escapeAttribute(chunk.documentTitle)}" ${page}>`,
+      // Kürzt nur, was über dem Chunk-Maximum liegt (Altbestand, Wort ohne
+      // Leerzeichen). Früher 2.400 Zeichen: Chunks bis 2.880 Zeichen verloren
+      // ihr Ende, ohne dass es jemand sah.
+      neutralizeSourceTags(truncate(chunk.content, MAX_CHUNK_CHARS)),
       "</quelle>",
     ].join("\n");
   });
@@ -99,7 +139,7 @@ export function buildUserPrompt(
     "",
     blocks.join("\n\n"),
     "",
-    `Frage: ${question}`,
+    `Frage: ${neutralizeSourceTags(question)}`,
     "",
     "Antworte nur anhand dieser Quellen und belege jede Aussage mit [n].",
   ].join("\n");

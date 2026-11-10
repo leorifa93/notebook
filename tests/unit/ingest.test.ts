@@ -11,6 +11,7 @@ import {
   type DocumentSummary,
 } from "@/lib/documents";
 import { toSqlVector } from "@/lib/embeddings";
+import { ConfigError } from "@/lib/env";
 import { DEFAULT_LIMITS, type IngestDeps } from "@/lib/ingest";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
 import { INGEST_RATE_LIMIT } from "@/lib/rate-limit";
@@ -236,6 +237,20 @@ describe("POST /api/ingest: Ablehnungen ohne Zeile in documents", () => {
       502,
     );
   });
+
+  it("meldet einen fehlenden Key als 503, ohne zum erneuten Versuch zu raten (R8)", async () => {
+    const response = await uploadMietvertrag({
+      db,
+      embed: async () => {
+        throw new ConfigError("OPENAI_API_KEY ist nicht gesetzt.");
+      },
+    });
+    const body = (await response.clone().json()) as { error?: string };
+    expect(body.error).not.toMatch(/versuche es/i);
+    expect(body.error).toContain("hilft nicht");
+    expect(body.error).toContain("nicht vollständig eingerichtet");
+    await expectRejected(response, 503);
+  });
 });
 
 describe("Doppelter Upload", () => {
@@ -392,7 +407,7 @@ describe("Hybrid-SQL aus lib/retrieval.ts gegen gespeicherte Chunks", () => {
     ).json()) as { id: string };
 
     const question = "Wie hoch ist die Kaution insgesamt?";
-    const run = async (documentIds: string[] | null) =>
+    const run = async (documentIds: string[]) =>
       (
         await db.query<{ document_id: string; page: number | null; content: string }>(HYBRID_SQL, [
           toSqlVector(stubEmbedding(question)),
@@ -404,7 +419,7 @@ describe("Hybrid-SQL aus lib/retrieval.ts gegen gespeicherte Chunks", () => {
         ])
       ).rows;
 
-    const all = await run(null);
+    const all = await run([vertrag.id, notiz.id]);
     expect(all[0]?.page).toBe(2);
     expect(all[0]?.content).toContain("3.450 Euro");
 
