@@ -240,6 +240,65 @@ export async function deleteDocument(
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Originaldatei für den Beleg-Sprung; `bytes` ist `null` bei Zeilen vor Schritt 2. */
+export interface DocumentFile {
+  title: string;
+  sourceType: SourceType;
+  mimeType: string | null;
+  bytes: Uint8Array | null;
+}
+
+interface DocumentFileRow {
+  title: string;
+  source_type: SourceType;
+  mime_type: string | null;
+  file_bytes: Uint8Array | null;
+}
+
+/**
+ * Liest die Originaldatei einer Quelle, nur innerhalb des Notebooks.
+ * `pg` liefert `bytea` als Buffer, PGlite als Uint8Array; beides ist ein
+ * Uint8Array.
+ */
+export async function getDocumentFile(
+  db: Queryable,
+  notebookId: string,
+  documentId: string,
+): Promise<DocumentFile | null> {
+  const { rows } = await db.query<DocumentFileRow>(
+    `SELECT title, source_type, mime_type, file_bytes
+     FROM documents WHERE id = $1 AND notebook_id = $2`,
+    [documentId, notebookId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    title: row.title,
+    sourceType: row.source_type,
+    mimeType: row.mime_type,
+    bytes: row.file_bytes,
+  };
+}
+
+/**
+ * Schneidet angefragte Dokument-IDs mit den Dokumenten des Notebooks.
+ * Gelöschte oder fremde IDs fallen heraus, statt die Suche zu erweitern.
+ * Die IDs müssen vorher mit `isUuid` geprüft sein.
+ */
+export async function existingDocumentIds(
+  db: Queryable,
+  notebookId: string,
+  documentIds: readonly string[],
+): Promise<string[]> {
+  if (documentIds.length === 0) return [];
+  const { rows } = await db.query<{ id: string }>(
+    `SELECT id::text AS id FROM documents
+     WHERE notebook_id = $1 AND id = ANY($2::uuid[])`,
+    [notebookId, [...documentIds]],
+  );
+  return rows.map((row) => row.id);
+}
+
 /** Vorab prüfen, sonst wirft Postgres bei `$1::uuid` einen 500er statt 400. */
 export function isUuid(value: string): boolean {
   return UUID_PATTERN.test(value);
