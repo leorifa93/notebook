@@ -2,7 +2,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 
 import { handleIngest } from "@/app/api/ingest/handler";
-import { HYBRID_SQL, retrieve, type RetrievalDeps } from "@/lib/retrieval";
+import {
+  HYBRID_SQL,
+  dropNearDuplicates,
+  retrieve,
+  type RetrievalDeps,
+  type RetrievedChunk,
+} from "@/lib/retrieval";
 
 import { stubEmbed } from "../helpers/embeddings";
 import { fileFrom, readFixture, uploadRequest } from "../helpers/fixtures";
@@ -185,5 +191,95 @@ describe("retrieve() über den HNSW-Index (F1)", () => {
       "SELECT current_setting('hnsw.iterative_scan') AS value",
     );
     expect(rows[0]?.value).toBe("off");
+  });
+});
+
+describe("retrieve(): fast gleiche Treffer (Live-Befund L2)", () => {
+  // Ein Abschnitt, der im Dokument zweimal steht (wie die versetzte Kopie im
+  // exportierten PDF). Als .txt, weil removeRepeatedBlocks nur PDFs bereinigt:
+  // Die Suche soll auch dann nicht zweimal dieselbe Stelle belegen.
+  const leitstelle = Array.from(
+    { length: 28 },
+    (_, index) =>
+      `Die Leitstelle Nord prüft im Abschnitt ${index + 1} das Funknetz, die Notstromversorgung und die Alarmierung der Wachen.`,
+  ).join(" ");
+  const andere = (thema: string): string =>
+    Array.from(
+      { length: 24 },
+      (_, index) => `Im Kapitel ${thema} ${index + 1} geht es um Dienstpläne, Fahrzeuge und Übungen der Feuerwehr.`,
+    ).join(" ");
+  const text = [leitstelle, andere("Alpha"), leitstelle, andere("Beta"), andere("Gamma")].join("\n\n");
+
+  let kopieId: string;
+  let fassungId: string;
+
+  beforeAll(async () => {
+    const ingestDeps = { db, embed: stubEmbed };
+    const kopie = await handleIngest(
+      uploadRequest(fileFrom(text, "leitstelle.txt", "text/plain")),
+      ingestDeps,
+    );
+    kopieId = ((await kopie.json()) as { id: string }).id;
+    // Zweite Fassung derselben Stelle als eigenes Dokument, eine Zahl anders.
+    const fassung = await handleIngest(
+      uploadRequest(
+        fileFrom(leitstelle.replace("Abschnitt 1 ", "Abschnitt 99 "), "leitstelle-v2.txt", "text/plain"),
+      ),
+      ingestDeps,
+    );
+    fassungId = ((await fassung.json()) as { id: string }).id;
+  }, 30_000);
+
+  const question = "Wie prüft die Leitstelle Nord Funknetz und Notstromversorgung?";
+
+  it("belegt dieselbe Stelle eines Dokuments nur einmal und füllt mit anderen Stellen auf", async () => {
+    const all = await retrieve(question, [kopieId], deps, { limit: 40 });
+    const copies = all.filter((chunk) => chunk.content.includes("Die Leitstelle Nord prüft im Abschnitt 1 "));
+    expect(copies).toHaveLength(1);
+
+    const top = await retrieve(question, [kopieId], deps, { limit: 3 });
+    expect(top).toHaveLength(3);
+    expect(top.filter((chunk) => chunk.content.includes("Abschnitt 1 das Funknetz"))).toHaveLength(1);
+  });
+
+  it("behält fast gleiche Stellen aus verschiedenen Dokumenten, damit Widersprüche sichtbar bleiben", async () => {
+    const chunks = await retrieve(question, [kopieId, fassungId], deps);
+    const documents = new Set(
+      chunks.filter((chunk) => chunk.content.includes("Die Leitstelle Nord prüft")).map((chunk) => chunk.documentId),
+    );
+    expect(documents).toEqual(new Set([kopieId, fassungId]));
+  });
+});
+
+describe("dropNearDuplicates", () => {
+  const words = (from: number, to: number): string =>
+    Array.from({ length: to - from }, (_, index) => `wort${from + index}`).join(" ");
+  const hit = (chunkId: string, content: string, documentId = "doc"): RetrievedChunk => ({
+    chunkId,
+    documentId,
+    documentTitle: "Titel",
+    page: 1,
+    chunkIndex: 0,
+    content,
+    score: 1,
+    vectorRank: 1,
+    textRank: null,
+    vectorSimilarity: 0.5,
+    bestVectorSimilarity: 0.5,
+  });
+
+  it("behält Nachbar-Chunks mit der normalen Überlappung von 15 %", () => {
+    const chunks = [hit("a", words(0, 100)), hit("b", words(85, 185))];
+    expect(dropNearDuplicates(chunks, 5).map((chunk) => chunk.chunkId)).toEqual(["a", "b"]);
+  });
+
+  it("verwirft einen kurzen Chunk, der ganz im besser platzierten steckt", () => {
+    const chunks = [hit("lang", words(0, 300)), hit("kurz", words(100, 160)), hit("anders", words(500, 560))];
+    expect(dropNearDuplicates(chunks, 5).map((chunk) => chunk.chunkId)).toEqual(["lang", "anders"]);
+  });
+
+  it("hält das Limit nach dem Entfernen ein", () => {
+    const chunks = [hit("a", words(0, 50)), hit("a2", words(0, 50)), hit("b", words(100, 150)), hit("c", words(200, 250))];
+    expect(dropNearDuplicates(chunks, 2).map((chunk) => chunk.chunkId)).toEqual(["a", "b"]);
   });
 });

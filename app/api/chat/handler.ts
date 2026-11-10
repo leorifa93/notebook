@@ -179,7 +179,7 @@ export async function handleChat(request: Request, deps: ChatDeps): Promise<Resp
     return errorResponse("prepare", error);
   }
 
-  const citations = buildCitations(chunks);
+  const citations = buildCitations(chunks, question);
   const timeoutMs = deps.timeoutMs ?? CHAT_TIMEOUT_MS;
 
   const stream = createUIMessageStream<ChatUIMessage>({

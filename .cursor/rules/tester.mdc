@@ -70,6 +70,10 @@ müsste, nur einen wertlosen Mock prüft, ein Nicht-Ziel erzwingt, oder
       ausgeführt; alle vier sind grün oder der Fehler ist dokumentiert.
 - [ ] Grenzfälle laut Plan und Review: leeres PDF, gescanntes PDF,
       sehr langer Absatz, doppelter Upload.
+- [ ] Echt exportierte PDFs (Layout-Programme, Lebenslauf-Vorlagen)
+      mitdenken: doppelt gezeichneter oder versetzt wiederholter Text
+      darf nicht doppelt im Index landen. Prüfen gegen `pdftotext`, nicht
+      nur „kein Textverlust“, sondern auch „kein Text zu viel“ (L2).
 - [ ] Kein Textverlust, Seitenzahlen bleiben am Chunk prüfbar.
 - [ ] Tests laufen ohne `DATABASE_URL` und ohne `OPENAI_API_KEY`, soweit
       der Schritt das hergibt; echte DB-Tests sind als solche benannt.

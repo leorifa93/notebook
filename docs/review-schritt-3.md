@@ -486,3 +486,95 @@ keinen). Beides testet Leonardo auf Production nach dem Merge.
 `npm run typecheck`, `npm run lint`, `npm test` (197 Tests in 16 Dateien)
 und `npm run build` ohne `DATABASE_URL` und `OPENAI_API_KEY` grün auf
 `e773f61`.
+
+## Live-Befund L2: Belege mehrfach und scheinbar falsch
+
+Leonardo nach dem Merge von #12 auf Production: „Die Belege sind nicht
+ganz korrekt. Manchmal korrekt, manchmal hat er sich tausendmal
+wiederholt an mehreren Stellen.“ Getestet mit einem exportierten
+Lebenslauf (1 Seite, 4.251 pt hoch).
+
+### Diagnose an den Rohdaten
+
+Drei Fragen per `curl` gegen `POST /api/chat`, roher SSE-Stream
+gespeichert (außerhalb des Repos, enthält personenbezogene Daten), dann
+lokal durch `readUIMessageStream` und `ChatAnswer` gespielt.
+
+- **UI unschuldig.** Pro Antwort genau ein `data-citations`- und ein
+  Text-Part; `splitCitations` und die Keys liefern genau die `[n]` aus dem
+  Stream.
+- **Einlesen (Ursache).** `parsePdf` lieferte 29.458 Zeichen,
+  `pdftotext` rund 20.000. 565 von 588 Textfenstern (100 Zeichen) kamen
+  mehrfach vor. Zwei Mechanismen: 295 von 628 Textstücken waren
+  deckungsgleich doppelt gezeichnet (gleiche Transform-Matrix), und der
+  Abschnitt „Berufserfahrung“ lag ein zweites Mal 492 pt versetzt in der
+  Textebene, im Bild nicht sichtbar. Ergebnis: 12 Chunks statt 5, 18
+  Chunk-Paare zu über 60 % deckungsgleich, Höchstwert 92 %.
+- **Retrieval (Folge).** Die Top 5 waren Kopien derselben Passage.
+- **Prompt (Folge).** Regel 2 erlaubte beliebig viele Belege; das Modell
+  hängte `[1][2][3][4][5]` an Zeilen, deren Angabe nur in einem Chunk
+  stand. Zusätzlich Markdown (`**`), das das UI roh zeigt (24 Sternchen in
+  einer Antwort).
+- **Ausschnitt (Eindruck „falsch“).** Die Karte zeigte die ersten 240
+  Zeichen eines Chunks von bis zu 2.880 Zeichen. Die zitierte Angabe stand
+  im Chunk, aber nicht im Ausschnitt.
+
+### Behebung (Branch `fix/belegqualitaet`)
+
+| Commit | Inhalt | Rot ohne Fix |
+| --- | --- | --- |
+| `pdf: doppelt gezeichneten …` | `joinTextItems` verwirft gleiche Stücke an gleicher Stelle (1 pt Toleranz), `removeRepeatedBlocks` spätere wörtliche Kopien ab 500 Zeichen pro Seite, an Wortgrenzen. Neues Fixture `duplikate-beispiel.pdf` | beide Fixture-Tests rot (2 statt 1 Vorkommen); nach dem ersten Teil allein bleibt der Abschnitt-Test rot |
+| `retrieval: fast gleiche Treffer …` | `dropNearDuplicates`: 5-Wort-Shingles, Überdeckung > 60 % mit einem besser platzierten Treffer **desselben** Dokuments, danach Auffüllen | PGlite-Test rot: dieselbe Stelle zweimal in den Treffern |
+| `prompt: höchstens zwei Belege …` | Regel 2 begrenzt auf zwei tragende Belege, neue Regel 7 verbietet Markdown, Aufzählungen als Bindestrich-Zeilen. SHA-256-Test bewusst neu gesetzt, `REFUSAL_TEXT` unverändert. **Ändert das Produktversprechen, freigegeben von Leonardo am 10.11.2026** | zwei Inhaltstests rot |
+| `prompt: Ausschnitt an der …` | `snippet()` wählt das Fenster mit den meisten verschiedenen Fragewörtern (Stoppwörter, Unicode-Wortgrenzen, Präfix für Beugung), 320 Zeichen, sonst Anfang | drei Snippet-Tests und der Chat-Test (Ausschnitt enthält „Kaution“) rot |
+
+Gemessen am Lebenslauf, lokal mit dem neuen Code (Zahlen ohne Inhalt):
+
+| | vorher | nachher |
+| --- | --- | --- |
+| Zeichen nach dem Einlesen | 29.458 | 10.591 |
+| Chunks | 12 | 5 |
+| Chunk-Paare > 60 % deckungsgleich | 18 | 0 |
+| größte Überdeckung zweier Chunks | 92 % | 28 % |
+| mehrfache Textfenster | 565 / 588 | 2 / 210 |
+
+Textverlust geprüft: Von 2.940 Fenstern (60 Zeichen) des alten Texts
+fehlen im neuen 17, alle an den Nahtstellen zwischen zwei Kopien.
+
+Dieselben drei Fragen lokal (PGlite, echte Embeddings, `gpt-4o-mini`,
+kein Production-Schreibzugriff):
+
+| Frage | `[n]` vorher → nachher | größte Belegkette | `**` |
+| --- | --- | --- | --- |
+| Berufliche Stationen | 12 → 11 | 1 → 1 | 24 → 0 |
+| Technologien | 20 → 8 | 5 → 2 | 16 → 0 |
+| Ausbildung | 1 → 1 | 1 → 1 | 0 → 0 |
+
+### Warum es keiner Rolle vorher auffiel
+
+Alle Tests liefen gegen selbst erzeugte PDFs, in denen jeder Text genau
+einmal gezeichnet ist. Der Tester prüfte „kein Textverlust“, aber nie „kein
+Text zu viel“; der Reviewer las den Diff, nicht die Daten, die ein echter
+Export liefert. Eine Kopie fällt erst auf, wenn man echte Stream-Rohdaten
+mit `pdftotext` vergleicht.
+
+### Offen
+
+- Nach dem Merge muss der Lebenslauf gelöscht und neu hochgeladen werden;
+  die gespeicherten Chunks sind noch die alten.
+- Bei Listen hängt weiterhin ein `[1]` an jeder Zeile (Regel 7 verlangt
+  das). Ob mehrere Zeilen aus derselben Quelle zusammengefasst werden
+  sollen, ist eine Produktfrage.
+- Gesperrte Überschriften wie „A U S B I L D U N G“ aus dem Export findet
+  weder die Volltextsuche noch der Ausschnitt; dann bleibt der Ausschnitt
+  am Anfang. Kandidat für die Textbereinigung.
+- Der Ausschnitt richtet sich nach der Frage, nicht nach der zitierten
+  Aussage. Besser wäre er an der Aussage, das geht aber erst nach dem
+  Stream.
+- Die Frage nach den Stationen nannte nachher eine Station weniger
+  (11 statt 12); einzelner Lauf, im Eval in Schritt 4 nachprüfen.
+
+### Testergebnis
+
+`npm run typecheck`, `npm run lint`, `npm test` (220 Tests in 16 Dateien)
+und `npm run build` grün auf dem Stand vor diesem Doku-Commit.

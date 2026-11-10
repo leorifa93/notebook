@@ -74,7 +74,12 @@ nicht selbst zurückbauen.
 - [ ] **Stille Fehler:** abgeschnittener Text, leeres `catch`, verschluckter
       Fehler, nicht awaited Promise, `200` statt `501` bei fehlender Logik.
 - [ ] **Datenintegrität:** Seitenzahlen am Chunk, kein Textverlust, kein
-      doppelter Ingest, Löschen räumt Chunks auf (Cascade).
+      doppelter Ingest, kein doppelter Text innerhalb eines Dokuments
+      (exportierte PDFs zeichnen Text teils zweimal, L2), Löschen räumt
+      Chunks auf (Cascade).
+- [ ] **Belege:** Zeigt jeder Beleg die Stelle, die die Aussage trägt,
+      und sind die Belege einer Antwort verschiedene Stellen? Bei Zweifel
+      einen echten Stream ansehen, nicht nur den Mock.
 - [ ] **Kosten und Grenzen:** Dateigröße, Seitenzahl, Batch-Größe,
       Ausgabetokens; Verhalten bei einem sehr großen PDF.
 - [ ] **Sicherheit:** keine Keys im Diff, keine Secrets im Client, keine

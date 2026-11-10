@@ -75,3 +75,23 @@ describe("parseTextSource", () => {
     expect(() => parseTextSource(new Uint8Array([0x48, 0xff, 0xfe, 0x21]))).toThrow();
   });
 });
+
+describe("parsePdf an fixtures/duplikate-beispiel.pdf (Live-Befund L2)", () => {
+  const count = (text: string, needle: string): number => text.split(needle).length - 1;
+
+  it("liest deckungsgleich doppelt gezeichneten Text nur einmal", async () => {
+    const parsed = await parsePdf(await readFixture("duplikate-beispiel.pdf"));
+    const text = parsed.pages[0]?.text ?? "";
+    expect(count(text, "Projektbericht Leuchtturm (Muster)")).toBe(1);
+    expect(count(text, "Die Inbetriebnahme ist für den 14. Mai geplant.")).toBe(1);
+  });
+
+  it("liest einen versetzt wiederholten langen Abschnitt nur einmal und verliert sonst nichts", async () => {
+    const parsed = await parsePdf(await readFixture("duplikate-beispiel.pdf"));
+    const text = parsed.pages[0]?.text ?? "";
+    expect(count(text, "Projekt Leuchtturm: Im ersten Bauabschnitt")).toBe(1);
+    expect(count(text, "von 72 Stunden ohne Störung.")).toBe(1);
+    expect(text).toContain("Ansprechpartnerin für Rückfragen ist die Projektleitung Küste.");
+    expect(text).toContain("zwölf neue Basisstationen");
+  });
+});

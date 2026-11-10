@@ -8,7 +8,7 @@ import type { Citation } from "@/lib/prompt";
 import { ConfigError } from "@/lib/env";
 import { CONFIG_ERROR_MESSAGE } from "@/lib/errors";
 import { MAX_SELECTED_SOURCES, MIN_SIMILARITY, shouldRefuse } from "@/lib/chat";
-import { REFUSAL_TEXT, SYSTEM_PROMPT } from "@/lib/prompt";
+import { REFUSAL_TEXT, SNIPPET_CHARS, SYSTEM_PROMPT } from "@/lib/prompt";
 import { CHAT_RATE_LIMIT } from "@/lib/rate-limit";
 import { retrieve } from "@/lib/retrieval";
 
@@ -107,8 +107,10 @@ describe("POST /api/chat: Antwort", () => {
       page: 2,
       href: `/api/documents/${vertragId}/file#page=2`,
     });
-    expect(first?.snippet).toContain("Miete");
-    expect(first?.snippet.length).toBeLessThanOrEqual(250);
+    // Der Ausschnitt zeigt die Stelle zur Frage, nicht den Chunk-Anfang.
+    expect(first?.snippet).toContain("Kaution");
+    expect(first?.snippet).toContain("3.450 Euro");
+    expect(first?.snippet.length).toBeLessThanOrEqual(SNIPPET_CHARS + 2);
   });
 
   it("gibt dem Modell Systemprompt und genau die Belege als Quellenblöcke", async () => {

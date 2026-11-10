@@ -57,6 +57,15 @@ export interface RetrievalDeps {
 }
 
 const DEFAULT_CANDIDATES = 20;
+/**
+ * Ab diesem Anteil gilt ein Treffer als Kopie eines besser platzierten aus
+ * demselben Dokument. Benachbarte Chunks teilen sich durch die Überlappung
+ * beim Chunking etwa 15 %, im Live-Befund L2 lagen echte Kopien bei 64 bis
+ * 92 % und das größte legitime Paar nach dem PDF-Fix bei 28 %.
+ */
+export const NEAR_DUPLICATE_CONTAINMENT = 0.6;
+/** Wörter pro Shingle: lang genug, dass bloß gleiche Fachwörter nicht zählen. */
+const SHINGLE_WORDS = 5;
 const DEFAULT_LIMIT = 5;
 /** RRF-Dämpfung; 60 ist der Wert aus dem Paper und ein guter Default. */
 const RRF_K = 60;
@@ -194,6 +203,55 @@ ORDER BY f.rrf_score DESC
 LIMIT $6
 `;
 
+function shingles(content: string): Set<string> {
+  const words = content.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  const result = new Set<string>();
+  if (words.length < SHINGLE_WORDS) {
+    if (words.length > 0) result.add(words.join(" "));
+    return result;
+  }
+  for (let index = 0; index + SHINGLE_WORDS <= words.length; index += 1) {
+    result.add(words.slice(index, index + SHINGLE_WORDS).join(" "));
+  }
+  return result;
+}
+
+/**
+ * Entfernt Treffer, deren Text zum größten Teil schon in einem besser
+ * platzierten Treffer desselben Dokuments steht, und füllt mit den
+ * nächsten auf.
+ *
+ * Live-Befund L2: Kopien desselben Abschnitts belegten alle fünf Plätze,
+ * das Modell zitierte sie als [1][2][3][4][5], und andere Stellen fehlten.
+ *
+ * - Wort-Shingles statt Zeichen: Zeilenumbrüche und Leerzeichen zwischen
+ *   den Kopien zählen nicht, die Wortfolge schon. Ein bloßer Wortvergleich
+ *   hielte zwei Chunks zum selben Thema schon für gleich.
+ * - Überdeckung statt Jaccard: Ein kurzer Chunk, der ganz in einem langen
+ *   steckt, ist eine Kopie, auch wenn der lange viel mehr enthält.
+ * - Nur innerhalb eines Dokuments: Zwei Fassungen eines Vertrags dürfen
+ *   beide als Beleg erscheinen, sonst ginge ein Widerspruch zwischen ihnen
+ *   verloren (Regel 4 im Systemprompt).
+ */
+export function dropNearDuplicates(
+  chunks: readonly RetrievedChunk[],
+  limit: number,
+): RetrievedChunk[] {
+  const kept: Array<{ chunk: RetrievedChunk; shingles: Set<string> }> = [];
+  for (const chunk of chunks) {
+    if (kept.length >= limit) break;
+    const own = shingles(chunk.content);
+    const duplicate = kept.some((other) => {
+      if (other.chunk.documentId !== chunk.documentId || own.size === 0) return false;
+      let shared = 0;
+      for (const shingle of own) if (other.shingles.has(shingle)) shared += 1;
+      return shared / own.size > NEAR_DUPLICATE_CONTAINMENT;
+    });
+    if (!duplicate) kept.push({ chunk, shingles: own });
+  }
+  return kept.map((entry) => entry.chunk);
+}
+
 /**
  * Holt Kandidaten für eine Frage aus den angegebenen Dokumenten.
  *
@@ -225,11 +283,13 @@ export async function retrieve(
       [...documentIds],
       trimmed,
       RRF_K,
-      limit,
+      // Alle fusionierten Kandidaten (höchstens zwei Listen), damit nach dem
+      // Entfernen von Kopien noch genug zum Auffüllen da sind.
+      Math.max(limit, 2 * candidates),
     ]);
   });
 
-  return rows.map((row) => ({
+  const ranked = rows.map((row): RetrievedChunk => ({
     chunkId: row.chunk_id,
     documentId: row.document_id,
     documentTitle: row.document_title,
@@ -243,6 +303,7 @@ export async function retrieve(
     bestVectorSimilarity:
       row.best_vector_similarity === null ? null : Number(row.best_vector_similarity),
   }));
+  return dropNearDuplicates(ranked, limit);
 }
 
 /**

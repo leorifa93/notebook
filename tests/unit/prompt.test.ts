@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 import {
+  SNIPPET_CHARS,
   buildCitations,
   buildUserPrompt,
   extractCitationNumbers,
@@ -30,11 +31,13 @@ function chunk(overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
 }
 
 describe("SYSTEM_PROMPT", () => {
-  it("ist Zeichen für Zeichen der freigegebene Prompt aus Schritt 1", () => {
-    // SHA-256 des Prompts vor Schritt 3. Ändert sich der Hash, ändert sich
-    // das Produktversprechen: nur mit Begründung im PR und Leonardos Freigabe.
+  it("ist Zeichen für Zeichen der freigegebene Prompt", () => {
+    // SHA-256 des Prompts. Ändert sich der Hash, ändert sich das
+    // Produktversprechen: nur mit Begründung im PR und Leonardos Freigabe.
+    // Stand: Regel 2 (höchstens zwei Belege) und Regel 7 (kein Markdown),
+    // freigegeben am 10.11.2026 nach Live-Befund L2. Vorher: 975b5414…
     expect(createHash("sha256").update(SYSTEM_PROMPT, "utf8").digest("hex")).toBe(
-      "975b541442a1fb75879f7c82079a8602eee5ad5148b6a3c084c260c8377ed048",
+      "37649a4bab62d4ccb431dc4b8e7dbfe22ba997c0b7bb19acab7124a95929f3f1",
     );
   });
 
@@ -51,6 +54,17 @@ describe("SYSTEM_PROMPT", () => {
   it("verlangt Belege in eckigen Klammern", () => {
     expect(SYSTEM_PROMPT).toContain("[1]");
   });
+
+  it("begrenzt Belege auf zwei pro Aussage (Live-Befund L2)", () => {
+    // Fünf fast gleiche Treffer wurden als [1][2][3][4][5] an jede Zeile gehängt.
+    expect(SYSTEM_PROMPT).toContain("Höchstens zwei Belege pro Aussage");
+    expect(SYSTEM_PROMPT).not.toContain("[2][3]");
+  });
+
+  it("verbietet Markdown, weil das UI es nicht rendert (Live-Befund L2)", () => {
+    expect(SYSTEM_PROMPT).toContain("Kein Markdown, keine Sternchen");
+    expect(SYSTEM_PROMPT).toContain("Aufzählungen als einfache Zeilen mit Bindestrich");
+  });
 });
 
 describe("buildCitations", () => {
@@ -58,37 +72,70 @@ describe("buildCitations", () => {
     const citations = buildCitations([
       chunk({ chunkId: "a" }),
       chunk({ chunkId: "b" }),
-    ]);
+    ], "Frage");
     expect(citations.map((citation) => citation.index)).toEqual([1, 2]);
     expect(citations.map((citation) => citation.chunkId)).toEqual(["a", "b"]);
   });
 
   it("übernimmt Seitenzahl und Dokumenttitel unverändert", () => {
-    const [citation] = buildCitations([chunk({ page: 12, documentTitle: "Anlage" })]);
+    const [citation] = buildCitations([chunk({ page: 12, documentTitle: "Anlage" })], "Frage");
     expect(citation?.page).toBe(12);
     expect(citation?.documentTitle).toBe("Anlage");
   });
 
   it("verlinkt die Originaldatei mit Seitenanker", () => {
-    const [citation] = buildCitations([chunk({ documentId: "doc-1", page: 3 })]);
+    const [citation] = buildCitations([chunk({ documentId: "doc-1", page: 3 })], "Frage");
     expect(citation?.href).toBe("/api/documents/doc-1/file#page=3");
   });
 
   it("verlinkt Quellen ohne Seiten ohne Anker", () => {
-    const [citation] = buildCitations([chunk({ documentId: "doc-1", page: null })]);
+    const [citation] = buildCitations([chunk({ documentId: "doc-1", page: null })], "Frage");
     expect(citation?.href).toBe("/api/documents/doc-1/file");
   });
 
   it("kürzt lange Auszüge, ohne mitten im Wort zu schneiden", () => {
     const long = Array.from({ length: 200 }, (_, i) => `wort${i}`).join(" ");
-    const [citation] = buildCitations([chunk({ content: long })]);
-    expect(citation?.snippet.length).toBeLessThanOrEqual(250);
+    const [citation] = buildCitations([chunk({ content: long })], "");
+    expect(citation?.snippet.length).toBeLessThanOrEqual(SNIPPET_CHARS + 2);
     expect(citation?.snippet).not.toMatch(/wor…$/);
     expect(citation?.snippet.endsWith("…")).toBe(true);
   });
 
+  describe("Ausschnitt an der passenden Stelle (Live-Befund L2)", () => {
+    // Langer Chunk, die Antwort steht erst am Ende: Vorher zeigte die Karte
+    // immer den Anfang, und der Beleg wirkte falsch, obwohl er stimmte.
+    const filler = Array.from({ length: 60 }, (_, i) => `Absatz${i} über Hausordnung und Treppenhaus.`).join(" ");
+    const content = `${filler} Die Kaution beträgt drei Nettokaltmieten, insgesamt 3.450 Euro, zahlbar in drei Raten.`;
+
+    it("zeigt die Stelle mit den Wörtern der Frage, auch am Ende des Chunks", () => {
+      const [citation] = buildCitations([chunk({ content })], "Wie hoch ist die Kaution?");
+      expect(citation?.snippet).toContain("Die Kaution beträgt drei Nettokaltmieten");
+      expect(citation?.snippet).toContain("3.450 Euro");
+      expect(citation?.snippet.startsWith("…")).toBe(true);
+      expect(citation?.snippet.length).toBeLessThanOrEqual(SNIPPET_CHARS + 2);
+    });
+
+    it("findet Wörter mit Umlaut und Beugung, ignoriert Stoppwörter", () => {
+      const text = `${filler} Für Rückfragen zur Kündigungsfrist ist die Hausverwaltung zuständig.`;
+      const [citation] = buildCitations([chunk({ content: text })], "Wer ist für die Rückfrage zuständig?");
+      expect(citation?.snippet).toContain("Rückfragen zur Kündigungsfrist");
+    });
+
+    it("schneidet vorn und hinten an Wortgrenzen", () => {
+      const [citation] = buildCitations([chunk({ content })], "Kaution");
+      const body = (citation?.snippet ?? "").replace(/^… /, "").replace(/ …$/, "");
+      expect(content).toContain(body);
+      expect(content.charAt(content.indexOf(body) - 1)).toMatch(/^\s?$/);
+    });
+
+    it("zeigt ohne Treffer den Anfang", () => {
+      const [citation] = buildCitations([chunk({ content })], "Quantenchromodynamik");
+      expect(citation?.snippet.startsWith("Absatz0")).toBe(true);
+    });
+  });
+
   it("gibt für leere Eingabe eine leere Liste", () => {
-    expect(buildCitations([])).toEqual([]);
+    expect(buildCitations([], "Frage")).toEqual([]);
   });
 });
 
