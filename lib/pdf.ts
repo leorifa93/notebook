@@ -45,13 +45,25 @@ export interface ParsePdfOptions {
 const MIN_CHARS_PER_PAGE = 40;
 
 /**
+ * Entfernt Steuerzeichen, die Postgres in `text` nicht speichern kann.
+ *
+ * Manche PDFs (etwa aus Word mit eingebetteten Schriften) liefern über pdf.js
+ * NUL-Bytes (U+0000) im Text. Postgres lehnt die mit
+ * `invalid byte sequence for encoding "UTF8": 0x00` ab und der ganze Ingest
+ * scheitert. Zeilenumbruch und Tab bleiben erhalten, alle anderen C0-Zeichen
+ * und DEL fliegen raus; sie tragen für Suche und Embedding keine Bedeutung.
+ */
+export function stripControlChars(raw: string): string {
+  return raw.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+}
+
+/**
  * Normalisiert PDF-Text: pdf.js liefert harte Zeilenumbrüche mitten im Satz
  * und teils doppelte Leerzeichen. Beides verschlechtert Chunking und
  * Embeddings, deshalb glätten wir es hier zentral.
  */
 function normalizeText(raw: string): string {
-  return raw
-    .replace(/\r\n?/g, "\n")
+  return stripControlChars(raw.replace(/\r\n?/g, "\n"))
     .replace(/[ \t]+/g, " ")
     // Bindestrich am Zeilenende zusammenführen: "Soft-\nware" -> "Software"
     .replace(/(\p{Ll})-\n(\p{Ll})/gu, "$1$2")
@@ -112,7 +124,7 @@ export async function parsePdf(
  */
 export function parseTextSource(data: Uint8Array): { page: null; text: string }[] {
   const decoded = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(data);
-  const text = decoded.replace(/\r\n?/g, "\n").trim();
+  const text = stripControlChars(decoded.replace(/\r\n?/g, "\n")).trim();
   return text ? [{ page: null, text }] : [];
 }
 
