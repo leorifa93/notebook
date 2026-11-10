@@ -377,3 +377,112 @@ lässt sich mit unladbarem `unpdf` (`vi.doMock`) importieren; vor dem Fix rot.
 
 `npm run typecheck`, `npm run lint`, `npm test` (173 Tests in 14 Dateien)
 und `npm run build` grün auf `ef4b1d8`.
+
+## 3b, zweiter PR: Chat-Oberfläche (Plan-Commits 9–11)
+
+Branch `feature/chat-ui`, nur Plan-Commits 9–11; Zusammenfassung und
+Fragevorschläge (12–14) folgen in einem eigenen PR. Vor jedem Commit liefen
+`@tester` und die `@reviewer`-Prüfliste gegen den gestagten Diff, danach
+der Pre-commit-Hook. Kein frischer Reviewer-Chat: Das ist Leonardos Review
+des PRs bzw. der Durchgang am Schrittende.
+
+| Commit | Inhalt |
+| --- | --- |
+| `f154400` | `@ai-sdk/react@2.0.288`, exakt gepinnt — die Version, die selbst `ai@5.0.285` pinnt (`npm ls`: eine Kopie von `ai` und `provider-utils`) |
+| `79f005b` | `components/chat.tsx` mit `useChat`, `lib/chat-client.ts` (Request-Form, Fehlermeldungen), `lib/citations.ts` (`splitCitations`, `splitParagraphs`) |
+| `e773f61` | `components/citation-popover.tsx`, `popoverPlacement()`, Safari-Grenze im README |
+
+### Entscheidungen
+
+- **Request-Form.** `prepareSendMessagesRequest` schickt genau
+  `{ question, documentIds }`. Die Auswahl kommt pro Frage über
+  `sendMessage(…, { body: { documentIds } })`, nicht über eine Closure im
+  Transport: Der Transport lebt so lange wie der Chat, die Häkchen ändern
+  sich.
+- **Fehlermeldungen.** Bei `!response.ok` wirft der Transport des SDK den
+  Antwort-Body als `Error.message`, also unser JSON. `chatErrorMessage()`
+  liest daraus `error`, übernimmt den deutschen `errorText` aus dem Stream
+  und ersetzt englischen oder technischen Rohtext („Failed to fetch“,
+  „Load failed“, „An error occurred.“, HTML der Plattform).
+- **Absage.** Leere Belegliste (Stufe 1) oder Antwort, die mit
+  `REFUSAL_TEXT` beginnt (Stufe 2), erscheint als eigener, ruhiger Block
+  mit Hinweis auf die Auswahl. Keine Belegliste darunter.
+- **`[n]` außerhalb der Liste** bleibt sichtbar, gestrichelt rot mit
+  Warnsymbol und Tooltip. Gleiche Form wie `extractCitationNumbers()`:
+  `[1, 2]` und `[a]` sind kein Beleg und bleiben Text.
+- **Belegliste unter der Antwort** zeigt nur tatsächlich zitierte Belege
+  in der Reihenfolge des ersten Auftretens; jeder Eintrag öffnet dieselbe
+  Karte wie `[n]`.
+- **Popover ohne Bibliothek.** Kein shadcn-Popover im Repo, und
+  `@radix-ui/react-popover` brächte floating-ui mit. `popoverPlacement()`
+  entscheidet oben/unten und links/rechts nach der Lage des Belegs; unter
+  `sm` liegt die Karte als Leiste am unteren Rand.
+- **Keine Komponenten-Tests.** `vitest.config.ts` läuft bewusst ohne
+  jsdom; jsdom plus Testing Library wären zwei bis drei neue Pakete für
+  wenig Gewinn. Die Logik steckt in `lib/` und ist dort getestet. Statt
+  eines Komponenten-Tests läuft in `tests/unit/chat-client.test.ts` die
+  Klasse `Chat` aus `@ai-sdk/react` (dieselbe, die `useChat` hält) gegen
+  den echten Handler mit PGlite und `MockLanguageModelV2`. Die Oberfläche
+  selbst ist per Playwright gegen einen lokalen Mock geprüft (Skript und
+  Screenshots außerhalb des Repos).
+
+### Befunde aus den Pro-Commit-Reviews
+
+| # | Commit | Schweregrad | Befund | Behebung |
+| --- | --- | --- | --- | --- |
+| U1 | 9 | hinweis | Commit-Text nannte nur `swr` und `throttleit` als neue Pakete im Lockfile, `dequal` und `use-sync-external-store` fehlten | Text vor dem Push korrigiert |
+| U2 | 10 | wichtig | Ohne eigenes Parsing zeigte der Fehlerzustand bei 400/429/503 den rohen JSON-Body `{"error":…}` | `chatErrorMessage()`, Tests für JSON, Stream-Text, HTML, Netzfehler |
+| U3 | 10 | wichtig | Der Fehler hing global an `useChat` und verschwand mit der nächsten Frage; die abgebrochene Antwort sah danach fertig aus (im Playwright-Lauf gefunden) | Vermerk „abgebrochen“/„angehalten“ pro Nachricht, vor dem Push in Commit 10 eingearbeitet |
+| U4 | 10 | hinweis | `pageLabel` exportiert ohne zweiten Aufrufer | nicht mehr exportiert |
+| U5 | 11 | hinweis | `tailwind-merge` strich `sm:inset-x-auto`, sobald `sm:left-0` oder `sm:right-0` folgte (an der `twMerge`-Ausgabe geprüft). Ab `sm` blieb damit `left: 0.75rem` aus der Mobilvariante stehen, die Lage hing an überbestimmten `left`/`right`/`width` | explizite `left`/`right`-Klassen statt `inset-x`; danach per `boundingBox` gemessen: Karte 320 px breit, rechtsbündig am Beleg |
+| U6 | 11 | wichtig | `animate-fade-in` an den Verlaufseinträgen hinterlässt `transform` (fill-mode `both`); damit wäre die fest positionierte Karte auf schmalen Fenstern im Eintrag gelandet | Animation an den Einträgen entfernt |
+| U7 | 10 | hinweis | Die Startseite wächst von 118 auf 186 kB First Load JS (`next build`), vor allem durch den UI-Teil von `ai` samt Schema-Validierung der Stream-Chunks | akzeptiert: Preis von `useChat` (Frage 1); offen für Schritt 4, falls es auf dem Beamer spürbar ist |
+| U8 | 10 | hinweis | `data-citations` wird im Client nicht gegen ein Schema geprüft | bewusst offen: Der Server ist unserer; `href` baut `citationHref()` serverseitig, und React 19 blockiert `javascript:`-URLs |
+
+### Geprüft und in Ordnung
+
+- Kein Secret im Diff, keine Inline-Styles, keine neue Styling-Bibliothek,
+  kein `console.log`, keine Server-Importe im Client (`lib/chat.ts` und
+  `lib/prompt.ts` ziehen nur Typen und Konstanten).
+- `SYSTEM_PROMPT`, API-Routen und Schema unverändert.
+- Senden ist ohne angehakte Quelle gesperrt (Hinweis, auf schmalen
+  Fenstern mit „Quellen öffnen“); der Server antwortet trotzdem 400
+  (Test über den Client).
+- Rot-grün: Ohne `prepareSendMessagesRequest` schlagen 6 der 11
+  Client-Tests fehl, weil der Server den Verlauf statt der Frage bekommt.
+
+### Von Hand geprüft (Playwright gegen lokalen Mock)
+
+Echte Handler gegen PGlite mit Stub-Embeddings und
+`MockLanguageModelV2` (verzögert gestreamt), `next dev` davor. Breit
+1440×900, schmal 390×844:
+
+- leer, ohne Quelle gesperrt, sendet, Belege da/Text noch nicht, streamt
+  mit Stopp-Button, fertige Antwort mit `[1]`, `[1][2]` und markiertem
+  `[7]`, Absage, Fehler mitten im Stream, 400 mit JSON-Body, 504 mit
+  HTML-Body, angehalten;
+- Belegkarte per Klick auf `[n]` und aus der Belegliste; Escape schließt
+  und gibt den Fokus an `[n]` zurück, Enter öffnet erneut, Tab erreicht
+  den Link, Tab aus der Karte und Klick daneben schließen;
+- Link `/api/documents/<id>/file#page=2`, `target=_blank`,
+  `rel=noopener`;
+- schmal: Karte als Leiste am unteren Rand (12 px Abstand, volle Breite).
+
+Nicht lokal prüfbar: Streaming über Vercel mit `gpt-4o-mini` und der
+Sprung auf die Seite im PDF-Viewer von Chrome (der Headless-Browser hat
+keinen). Beides testet Leonardo auf Production nach dem Merge.
+
+### Offen
+
+- Fragevorschläge statt der drei festen Beispielfragen: Commit 14
+  (`TODO(Schritt 3, Commit 14)` in `components/chat.tsx`).
+- „Unbelegt“-Hinweis für Antworten ohne `[n]`: `TODO(Schritt 4)` in
+  `lib/prompt.ts`, hier nicht umgesetzt.
+- Verlauf ist nach einem Reload weg (Entscheidung 3).
+- F3, F5–F8, S4, S5, S6/R9 aus den früheren Durchgängen.
+
+### Testergebnis
+
+`npm run typecheck`, `npm run lint`, `npm test` (197 Tests in 16 Dateien)
+und `npm run build` ohne `DATABASE_URL` und `OPENAI_API_KEY` grün auf
+`e773f61`.
