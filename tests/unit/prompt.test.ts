@@ -30,11 +30,13 @@ function chunk(overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
 }
 
 describe("SYSTEM_PROMPT", () => {
-  it("ist Zeichen für Zeichen der freigegebene Prompt aus Schritt 1", () => {
-    // SHA-256 des Prompts vor Schritt 3. Ändert sich der Hash, ändert sich
-    // das Produktversprechen: nur mit Begründung im PR und Leonardos Freigabe.
+  it("ist Zeichen für Zeichen der freigegebene Prompt", () => {
+    // SHA-256 des Prompts. Ändert sich der Hash, ändert sich das
+    // Produktversprechen: nur mit Begründung im PR und Leonardos Freigabe.
+    // Stand: Regel 2 (höchstens zwei Belege) und Regel 7 (kein Markdown),
+    // freigegeben am 10.11.2026 nach Live-Befund L2. Vorher: 975b5414…
     expect(createHash("sha256").update(SYSTEM_PROMPT, "utf8").digest("hex")).toBe(
-      "975b541442a1fb75879f7c82079a8602eee5ad5148b6a3c084c260c8377ed048",
+      "37649a4bab62d4ccb431dc4b8e7dbfe22ba997c0b7bb19acab7124a95929f3f1",
     );
   });
 
@@ -50,6 +52,17 @@ describe("SYSTEM_PROMPT", () => {
 
   it("verlangt Belege in eckigen Klammern", () => {
     expect(SYSTEM_PROMPT).toContain("[1]");
+  });
+
+  it("begrenzt Belege auf zwei pro Aussage (Live-Befund L2)", () => {
+    // Fünf fast gleiche Treffer wurden als [1][2][3][4][5] an jede Zeile gehängt.
+    expect(SYSTEM_PROMPT).toContain("Höchstens zwei Belege pro Aussage");
+    expect(SYSTEM_PROMPT).not.toContain("[2][3]");
+  });
+
+  it("verbietet Markdown, weil das UI es nicht rendert (Live-Befund L2)", () => {
+    expect(SYSTEM_PROMPT).toContain("Kein Markdown, keine Sternchen");
+    expect(SYSTEM_PROMPT).toContain("Aufzählungen als einfache Zeilen mit Bindestrich");
   });
 });
 

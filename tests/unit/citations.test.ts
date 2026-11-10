@@ -102,3 +102,16 @@ describe("popoverPlacement", () => {
     expect(popoverPlacement(at(600, 400), viewport)).toEqual({ horizontal: "start", vertical: "below" });
   });
 });
+
+describe("Aufzählungen nach Regel 7 des Systemprompts", () => {
+  it("bleiben ein Absatz mit Zeilen, Bindestrich und Beleg je Zeile", () => {
+    const answer = "Stationen:\n- Leitstelle Nord [1]\n- Funknetz Küste [2]";
+    expect(splitParagraphs(answer)).toEqual([answer]);
+    expect(splitCitations(answer, 2)).toEqual([
+      { type: "text", text: "Stationen:\n- Leitstelle Nord " },
+      { type: "citation", index: 1 },
+      { type: "text", text: "\n- Funknetz Küste " },
+      { type: "citation", index: 2 },
+    ]);
+  });
+});
