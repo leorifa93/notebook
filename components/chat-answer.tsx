@@ -97,15 +97,31 @@ export function ChatAnswer({ message, streaming }: ChatAnswerProps) {
     );
   }
 
+  return <CitedText text={text} citations={list} streaming={streaming} />;
+}
+
+interface CitedTextProps {
+  text: string;
+  citations: readonly Citation[];
+  /** Zeigt am letzten Absatz einen Schreib-Cursor. */
+  streaming?: boolean;
+}
+
+/**
+ * Text mit klickbaren Belegen `[n]` und darunter die zitierten Belege.
+ * Gemeinsam für Chat-Antworten und die Zusammenfassung, damit beide
+ * dieselbe Belegkarte öffnen.
+ */
+export function CitedText({ text, citations, streaming = false }: CitedTextProps) {
   const paragraphs = splitParagraphs(text);
-  const cited = citedInOrder(text, list);
+  const cited = citedInOrder(text, citations);
 
   return (
     <div className="space-y-3">
       <div className="space-y-3 text-[0.9375rem] leading-relaxed">
         {paragraphs.map((paragraph, index) => (
           <p key={index} className="whitespace-pre-line">
-            {renderSegments(splitCitations(paragraph, list.length), list)}
+            {renderSegments(splitCitations(paragraph, citations.length), citations)}
             {streaming && index === paragraphs.length - 1 && (
               <span
                 className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-foreground/60"
