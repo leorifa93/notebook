@@ -424,6 +424,12 @@ Ein Eval-Set ist der stärkste einzelne Baustein für den Reviewer, weil es
 zeigt, dass die Pipeline messbar ist und nicht nur gefühlt funktioniert —
 Konzept in [`docs/eval-plan.md`](docs/eval-plan.md).
 
+## Vorgehen
+
+Wie geplant, gebaut und reviewt wurde — mit getrennten Cursor-Rollen, kleinen
+Commits und einem Protokoll pro Schritt — steht in
+[`docs/vorgehen.md`](docs/vorgehen.md).
+
 ---
 
 ## Lizenz / Kontext
