@@ -8,7 +8,12 @@ import {
   insertDocumentWithChunks,
   type StoredDocument,
 } from "@/lib/documents";
-import { MAX_FILE_BYTES, MAX_PDF_PAGES, formatMegabytes } from "@/lib/limits";
+import {
+  MAX_CHUNKS_PER_SOURCE,
+  MAX_FILE_BYTES,
+  MAX_PDF_PAGES,
+  formatMegabytes,
+} from "@/lib/limits";
 import {
   PdfPageLimitError,
   detectSourceType,
@@ -42,11 +47,13 @@ export class IngestError extends Error {
 export interface IngestLimits {
   maxFileBytes: number;
   maxPdfPages: number;
+  maxChunks: number;
 }
 
 export const DEFAULT_LIMITS: IngestLimits = {
   maxFileBytes: MAX_FILE_BYTES,
   maxPdfPages: MAX_PDF_PAGES,
+  maxChunks: MAX_CHUNKS_PER_SOURCE,
 };
 
 export interface ParsedUpload {
@@ -196,6 +203,15 @@ export async function ingestUpload(
   const chunks = chunkPages(upload.pages, upload.title);
   if (chunks.length === 0) {
     throw new IngestError(422, "Die Datei enthält keinen Text.");
+  }
+
+  // Nach dem Chunking, vor den Embeddings: Hier kostet die Ablehnung nichts.
+  const maxChunks = (deps.limits ?? DEFAULT_LIMITS).maxChunks;
+  if (chunks.length > maxChunks) {
+    throw new IngestError(
+      413,
+      `Die Quelle ist zu umfangreich (${chunks.length} Abschnitte, erlaubt sind ${maxChunks}). Bitte teile die Datei auf.`,
+    );
   }
 
   let embeddings: number[][];

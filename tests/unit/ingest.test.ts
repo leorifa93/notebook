@@ -11,7 +11,7 @@ import {
   type DocumentSummary,
 } from "@/lib/documents";
 import { toSqlVector } from "@/lib/embeddings";
-import type { IngestDeps } from "@/lib/ingest";
+import { DEFAULT_LIMITS, type IngestDeps } from "@/lib/ingest";
 import { DEFAULT_NOTEBOOK_ID } from "@/lib/notebooks";
 import { INGEST_RATE_LIMIT } from "@/lib/rate-limit";
 import { HYBRID_SQL } from "@/lib/retrieval";
@@ -161,14 +161,39 @@ describe("POST /api/ingest: Ablehnungen ohne Zeile in documents", () => {
 
   it("lehnt eine Datei über dem Größenlimit mit 413 ab", async () => {
     await expectRejected(
-      await uploadMietvertrag({ ...deps, limits: { maxFileBytes: 1024, maxPdfPages: 40 } }),
+      await uploadMietvertrag({ ...deps, limits: { ...DEFAULT_LIMITS, maxFileBytes: 1024 } }),
       413,
     );
   });
 
   it("lehnt ein PDF über dem Seitenlimit mit 413 ab", async () => {
     await expectRejected(
-      await uploadMietvertrag({ ...deps, limits: { maxFileBytes: 4 * 1024 * 1024, maxPdfPages: 5 } }),
+      await uploadMietvertrag({ ...deps, limits: { ...DEFAULT_LIMITS, maxPdfPages: 5 } }),
+      413,
+    );
+  });
+
+  it("lehnt eine Quelle mit mehr Abschnitten als erlaubt mit 413 ab, ohne einzubetten", async () => {
+    let embedCalls = 0;
+    await expectRejected(
+      await uploadMietvertrag({
+        db,
+        embed: async (texts) => {
+          embedCalls += 1;
+          return stubEmbed(texts);
+        },
+        limits: { ...DEFAULT_LIMITS, maxChunks: 3 },
+      }),
+      413,
+    );
+    expect(embedCalls).toBe(0);
+  });
+
+  it("begrenzt auch Textdateien: 4 MB Text überschreiten das Standardlimit", async () => {
+    const paragraph = "Die Miete ist bis zum dritten Werktag des Monats zu zahlen. ".repeat(10);
+    const text = `${paragraph}\n\n`.repeat(Math.floor((3.9 * 1024 * 1024) / (paragraph.length + 2)));
+    await expectRejected(
+      await handleIngest(uploadRequest(fileFrom(text, "gross.txt", "text/plain")), deps),
       413,
     );
   });
