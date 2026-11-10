@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 import {
   buildCitations,
   buildUserPrompt,
   extractCitationNumbers,
+  REFUSAL_TEXT,
   SYSTEM_PROMPT,
 } from "@/lib/prompt";
 import { MAX_CHUNK_CHARS, chunkPages } from "@/lib/chunk";
@@ -26,6 +29,19 @@ function chunk(overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
 }
 
 describe("SYSTEM_PROMPT", () => {
+  it("ist Zeichen für Zeichen der freigegebene Prompt aus Schritt 1", () => {
+    // SHA-256 des Prompts vor Schritt 3. Ändert sich der Hash, ändert sich
+    // das Produktversprechen: nur mit Begründung im PR und Leonardos Freigabe.
+    expect(createHash("sha256").update(SYSTEM_PROMPT, "utf8").digest("hex")).toBe(
+      "975b541442a1fb75879f7c82079a8602eee5ad5148b6a3c084c260c8377ed048",
+    );
+  });
+
+  it("enthält den Absagetext wörtlich, den der Chat auch ohne Modell sendet", () => {
+    expect(REFUSAL_TEXT).toBe("Das steht nicht in den bereitgestellten Quellen.");
+    expect(SYSTEM_PROMPT).toContain(`schreibe: "${REFUSAL_TEXT}"`);
+  });
+
   it("verbietet Vorwissen und gibt einen erlaubten Ausweg", () => {
     expect(SYSTEM_PROMPT).toContain("ausschließlich");
     expect(SYSTEM_PROMPT).toContain("Das steht nicht in den bereitgestellten Quellen.");
